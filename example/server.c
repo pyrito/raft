@@ -2,7 +2,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/time.h>
+#include <stdarg.h>
 
 #include "../include/raft.h"
 #include "../include/raft/uv.h"
@@ -20,9 +22,12 @@
  *
  ********************************************************************/
 
-#define CHUNK_SIZE_KB 2048
-#define INTER_OP_INTERVAL_MS 20
-#define RECORD_CNT 100
+int chunk_size_kb = 0;
+int inter_op_interval_ms = 0;
+int gdb_print_record_cnt = 0;
+int test_duration_secs = 0;
+const char *dir;
+unsigned id;
 
 struct Fsm
 {
@@ -36,17 +41,17 @@ static int FsmApply(struct raft_fsm *fsm,
                     void **result)
 {
     struct Fsm *f = fsm->data;
-    if ((buf->len != CHUNK_SIZE_KB * 1024) || (
-           strcmp(buf->base + sizeof(uint64_t), "hi there") != 0)) {
+    if ((buf->len != chunk_size_kb * 1024) || (
+           strcmp(buf->base, "hi there") != 0)) {
         fprintf(stderr, "Failing... %s %d\n",
-            buf->base + sizeof(uint64_t), strcmp(buf->base + sizeof(uint64_t), "hi there"));
+            buf->base, strcmp(buf->base, "hi there"));
         return RAFT_MALFORMED;
     }
-    f->count += 1;//*(uint64_t *)buf->base;
+    f->count += 1;
     *result = &f->count;
-    if (f->count % RECORD_CNT == 0 ) {
+    if (gdb_print_record_cnt != 0 && (f->count % gdb_print_record_cnt == 0 )) {
       gettimeofday(&stop_iter, NULL);
-      fprintf(stderr, "Took %ld ms for %d records\n", (stop_iter.tv_sec - start_iter.tv_sec) * 1000 + (stop_iter.tv_usec - start_iter.tv_usec)/1000, RECORD_CNT);
+      fprintf(stderr, "Took %ld ms for %d records\n", (stop_iter.tv_sec - start_iter.tv_sec) * 1000 + (stop_iter.tv_usec - start_iter.tv_usec)/1000, gdb_print_record_cnt);
       gettimeofday(&start_iter, NULL);
     }
     return 0;
@@ -294,21 +299,25 @@ static void serverTimerCb(uv_timer_t *timer)
     struct raft_apply *req;
     int rv;
 
+    struct timeval temp;
+    gettimeofday(&temp, NULL);
+    if (test_duration_secs < (temp.tv_sec - start.tv_sec)) {
+      struct Fsm *f = s->fsm.data;
+      fprintf(stderr, "Ops/sec = %f",
+        ((float) (f->count))/(temp.tv_sec - start.tv_sec));
+       exit(0);    
+    }
     if (s->raft.state != RAFT_LEADER) {
         return;
     }
 
-    // fprintf(stderr, "Sending out entry....\n");
-    buf.len = CHUNK_SIZE_KB * 1024;
+    buf.len = chunk_size_kb * 1024;
     buf.base = raft_malloc(buf.len);
-    strcpy(buf.base + sizeof(uint64_t), "hi there");
-    //strcpy(((char *)buf.base)-20, "hi there");
+    strcpy(buf.base, "hi there");
     if (buf.base == NULL) {
         Log(s->id, "serverTimerCb(): out of memory");
         return;
     }
-
-    *(uint64_t *)buf.base = 1;
 
     req = raft_malloc(sizeof *req);
     if (req == NULL) {
@@ -322,12 +331,6 @@ static void serverTimerCb(uv_timer_t *timer)
         Logf(s->id, "raft_apply(): %s", raft_errmsg(&s->raft));
         return;
     }
-    //rv = uv_timer_stop(&s->timer);
-    //if (rv != 0) {
-    //    Logf(s->id, "raft_apply(): %s", raft_errmsg(&s->raft));
-    //    return;
-    //}
-
 }
 
 /* Start the example server. */
@@ -344,7 +347,7 @@ static int ServerStart(struct Server *s)
     }
     gettimeofday(&start, NULL);
     start_iter = start;
-    rv = uv_timer_start(&s->timer, serverTimerCb, 0, INTER_OP_INTERVAL_MS);
+    rv = uv_timer_start(&s->timer, serverTimerCb, 0, inter_op_interval_ms);
     if (rv != 0) {
         Logf(s->id, "uv_timer_start(): %s", uv_strerror(rv));
         goto err;
@@ -398,21 +401,46 @@ static void mainSigintCb(struct uv_signal_s *handle, int signum)
     ServerClose(server, mainServerCloseCb);
 }
 
+void parse_options(int argc, char **argv) {
+  int opt = 0;
+  while ((opt = getopt(argc, argv, "c:t:r:d:x:y:")) != -1) {
+    switch (opt) {
+      case 'c':
+        chunk_size_kb = atoi(optarg);
+        break;
+      case 't':
+        inter_op_interval_ms = atoi(optarg);
+        break;
+      case 'r':
+        gdb_print_record_cnt = atoi(optarg);
+        break;
+      case 'd':
+        test_duration_secs = atoi(optarg);
+        break;
+      case 'x':
+        dir = optarg;
+        break;
+      case 'y':
+        id = atoi(optarg);
+        break;
+      default: /* '?' */
+        fprintf(stderr, "Usage: %s [-c <chunk_size_kb> -t <inter_op_interval_ms> -r <gdb_print_record_cnt> -d <test_duration_secs> -x <dir> -y <id>]\n",
+             argv[0]);
+        exit(EXIT_FAILURE);
+      }
+    }
+}
+
 int main(int argc, char *argv[])
 {
+    parse_options(argc, argv);
+
+    fprintf(stderr, "Test parameters: chunk_size_kb=%d inter_op_interval_ms=%d gdb_print_record_cnt=%d test_duration_secs=%d\n", chunk_size_kb, inter_op_interval_ms, gdb_print_record_cnt, test_duration_secs);
+
     struct uv_loop_s loop;
     struct uv_signal_s sigint; /* To catch SIGINT and exit. */
     struct Server server;
-    const char *dir;
-    unsigned id;
     int rv;
-
-    if (argc != 3) {
-        printf("usage: example-server <dir> <id>\n");
-        return 1;
-    }
-    dir = argv[1];
-    id = (unsigned)atoi(argv[2]);
 
     /* Ignore SIGPIPE, see https://github.com/joyent/libuv/issues/1254 */
     signal(SIGPIPE, SIG_IGN);
