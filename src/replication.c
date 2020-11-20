@@ -655,6 +655,7 @@ err:
     return rv;
 }
 
+// Called only in the path where we received send_append_entries_result
 int replicationUpdate(struct raft *r,
                       const struct raft_server *server,
                       const struct raft_append_entries_result *result)
@@ -740,7 +741,7 @@ int replicationUpdate(struct raft *r,
     }
 
     /* Check if we can commit some new entries. */
-    replicationQuorum(r, r->last_stored);
+    replicationQuorum(r, min(r->last_stored, last_index));
 
     rv = replicationApply(r);
     if (rv != 0) {
