@@ -282,14 +282,12 @@ static void serverApplyCb(struct raft_apply *req, int status, void *result)
     raft_free(req);
     if (status != 0) {
         if (status != RAFT_LEADERSHIPLOST) {
-            fprintf(stderr, "Here....\n");
             Logf(s->id, "raft_apply() callback: %s (%d)", raft_errmsg(&s->raft),
                  status);
         }
         return;
     }
     count = *(int *)result;
-    //fprintf(stderr, "raft_apply callback count=%d....\n", count);
 }
 
 /* Called periodically every APPLY_RATE milliseconds. */

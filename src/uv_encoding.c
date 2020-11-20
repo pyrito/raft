@@ -41,6 +41,8 @@ static size_t sizeofAppendEntries(const struct raft_append_entries *p)
            sizeof(uint64_t) + /* Previous log entry term */
            sizeof(uint64_t) + /* Leader's commit index */
            sizeof(uint64_t) + /* Number of entries in the batch */
+           sizeof(uint64_t) + /* Leader's id */
+           //sizeof(strlen(p->leader_address) + 1) + /* Leader's address */
            16 * p->n_entries /* One header per entry */;
 }
 
@@ -114,7 +116,9 @@ static void encodeAppendEntries(const struct raft_append_entries *p, void *buf)
     bytePut64(&cursor, p->term);           /* Leader's term. */
     bytePut64(&cursor, p->prev_log_index); /* Previous index. */
     bytePut64(&cursor, p->prev_log_term);  /* Previous term. */
-    bytePut64(&cursor, p->leader_commit);  /* Commit index. */
+    bytePut64(&cursor, p->leader_commit);  /* Leader commit. */
+    bytePut64(&cursor, p->leader_id);  /* Leader id. */
+    //bytePutString(&cursor, p->leader_address);  /* Leader address. */
 
     uvEncodeBatchHeader(p->entries, p->n_entries, cursor);
 }
@@ -391,6 +395,8 @@ static int decodeAppendEntries(const uv_buf_t *buf,
     args->prev_log_index = byteGet64(&cursor);
     args->prev_log_term = byteGet64(&cursor);
     args->leader_commit = byteGet64(&cursor);
+    args->leader_id = byteGet64(&cursor);
+    //args->leader_address = byteGetString(&cursor, 32);
 
     rv = uvDecodeBatchHeader(cursor, &args->entries, &args->n_entries);
     if (rv != 0) {

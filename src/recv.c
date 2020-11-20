@@ -22,6 +22,12 @@
 #define tracef(...)
 #endif
 
+static void chainReplicateCb(struct raft_io_send *req, int status)
+{
+   (void)status;
+   HeapFree(req);
+}
+
 /* Dispatch a single RPC message to the appropriate handler. */
 static int recvMessage(struct raft *r, struct raft_message *message)
 {
@@ -36,8 +42,35 @@ static int recvMessage(struct raft *r, struct raft_message *message)
     /* tracef("%s from server %ld", message_descs[message->type - 1],
        message->server_id); */
 
+    struct raft_message message_next = *message;
+    struct raft_io_send *req_next;
+    // The previous server has index r->id.
+    struct raft_server *server = &r->configuration.servers[r->id];
     switch (message->type) {
         case RAFT_IO_APPEND_ENTRIES:
+	        /* Send to the next person in the chain */
+
+          if (r->id < r->configuration.n) {
+            tracef("Chain replicating message to %d %s", server->id, server->address);
+            message_next.server_id = server->id;
+            message_next.server_address = server->address;
+
+            req_next = raft_malloc(sizeof *req_next);
+            if (req_next == NULL) {
+                rv = RAFT_NOMEM;
+                goto after_chain_replicate;
+            }
+            memset(req_next, 0, sizeof(struct raft_io_send));
+
+            rv = r->io->send(r->io, req_next, &message_next, NULL);
+            if (rv != 0) {
+                raft_free(req_next);
+                return rv;
+            }
+          } 
+
+after_chain_replicate:
+
             rv = recvAppendEntries(r, message->server_id,
                                    message->server_address,
                                    &message->append_entries);
