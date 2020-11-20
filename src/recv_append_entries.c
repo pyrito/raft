@@ -100,7 +100,8 @@ int recvAppendEntries(struct raft *r,
 
     /* Update current leader because the term in this AppendEntries RPC is up to
      * date. */
-    rv = recvUpdateLeader(r, id, address);
+    struct raft_server *leader = configurationGet(&r->configuration, args->leader_id);
+    rv = recvUpdateLeader(r, args->leader_id, leader->address);
     if (rv != 0) {
         return rv;
     }
@@ -140,8 +141,8 @@ reply:
     }
 
     message.type = RAFT_IO_APPEND_ENTRIES_RESULT;
-    message.server_id = id;
-    message.server_address = address;
+    message.server_id = args->leader_id;
+    message.server_address = leader->address;
 
     req = HeapMalloc(sizeof *req);
     if (req == NULL) {

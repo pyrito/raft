@@ -221,7 +221,7 @@ static int uvClientSend(struct uvClient *c, struct uvSend *send)
         return 0;
     }
 
-    tracef("connection available -> write message");
+    // tracef("connection available -> write message");
     send->write.data = send;
     rv = uv_write(&send->write, c->stream, send->bufs, send->n_bufs,
                   uvSendWriteCb);

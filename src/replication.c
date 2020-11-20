@@ -118,6 +118,7 @@ static int sendAppendEntries(struct raft *r,
     message.type = RAFT_IO_APPEND_ENTRIES;
     message.server_id = server->id;
     message.server_address = server->address;
+    args->leader_id = r->id;
 
     req = raft_malloc(sizeof *req);
     if (req == NULL) {
@@ -370,14 +371,18 @@ static int triggerAll(struct raft *r)
     /* Trigger replication for servers we didn't hear from recently. */
     for (i = 0; i < r->configuration.n; i++) {
         struct raft_server *server = &r->configuration.servers[i];
-        if (server->id == r->id) {
+        if (server->id != (r->id+1)) {
             continue;
         }
+        //if (server->id == r->id) {
+        //    continue;
+        //}
         /* Skip spare servers, unless they're being promoted. */
         if (server->role == RAFT_SPARE &&
             server->id != r->leader_state.promotee_id) {
             continue;
         }
+        // tracef("Calling replicationProgress for %d....", server->id);
         rv = replicationProgress(r, i);
         if (rv != 0 && rv != RAFT_NOCONNECTION) {
             /* This is not a critical failure, let's just log it. */
@@ -534,6 +539,7 @@ out:
 /* Submit a disk write for all entries from the given index onward. */
 static int appendLeader(struct raft *r, raft_index index)
 {
+    tracef("appendLeader....");
     struct raft_entry *entries;
     unsigned n;
     struct appendLeader *request;
@@ -771,7 +777,7 @@ int replicationUpdate(struct raft *r,
         }
         /* If this follower is in pipeline mode, send it more entries. */
         if (progressState(r, i) == PROGRESS__PIPELINE) {
-            replicationProgress(r, i);
+            // replicationProgress(r, i);
         }
     }
 
@@ -883,6 +889,7 @@ static void appendFollowerCb(struct raft_io_append *req, int status)
      */
     if (args->leader_commit > r->commit_index) {
         r->commit_index = min(args->leader_commit, r->last_stored);
+        tracef("appendFollowerCb replicationApply...\n");
         rv = replicationApply(r);
         if (rv != 0) {
             goto out;
