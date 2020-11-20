@@ -273,6 +273,7 @@ struct raft_append_entries
     raft_index leader_commit;   /* Leader's commit index. */
     struct raft_entry *entries; /* Log entries to append. */
     unsigned n_entries;         /* Size of the log entries array. */
+    raft_id leader_id;
 };
 
 /**
