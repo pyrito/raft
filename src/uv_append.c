@@ -194,7 +194,7 @@ static void uvAliveSegmentWriteCb(struct UvWriterReq *write, const int status)
 
     /* Check if the write was successful. */
     if (status != 0) {
-        Tracef(uv->tracer, "write: %s", uv->io->errmsg);
+        Tracef("write: %s", uv->io->errmsg);
         uv->errored = true;
         goto out;
     }

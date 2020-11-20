@@ -10,6 +10,7 @@ static inline void noopTracerEmit(struct raft_tracer *t,
     (void)file;
     (void)line;
     (void)message;
+    printf("%s:%d: %s\n", file, line, message);
 }
 
 /* Default no-op tracer. */

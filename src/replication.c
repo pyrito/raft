@@ -18,8 +18,8 @@
 #include "tracing.h"
 
 /* Set to 1 to enable tracing. */
-#if 0
-#define tracef(...) Tracef(r->tracer, __VA_ARGS__)
+#if 1
+#define tracef(...) Tracef(__VA_ARGS__)
 #else
 #define tracef(...)
 #endif
@@ -111,7 +111,7 @@ static int sendAppendEntries(struct raft *r,
      */
     args->leader_commit = r->commit_index;
 
-    tracef("send %u entries starting at %llu to server %u (last index %llu)",
+    tracef("send %u entries starting at %llu + 1 to server %u (last log index on leader is %llu)",
            args->n_entries, args->prev_log_index, server->id,
            logLastIndex(&r->log));
 

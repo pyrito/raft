@@ -6,8 +6,8 @@
 #include "replication.h"
 
 /* Set to 1 to enable tracing. */
-#if 0
-#define tracef(...) Tracef(r->tracer, __VA_ARGS__)
+#if 1
+#define tracef(...) Tracef(__VA_ARGS__)
 #else
 #define tracef(...)
 #endif
@@ -26,6 +26,8 @@ int recvAppendEntriesResult(struct raft *r,
     assert(address != NULL);
     assert(result != NULL);
 
+    tracef("recvAppendEntriesResult from %d result_term=%d result_index=%d\n", id,
+        result->term, result->last_log_index);
     if (r->state != RAFT_LEADER) {
         tracef("local server is not leader -> ignore");
         return 0;

@@ -9,8 +9,8 @@
 #include "uv.h"
 #include "uv_encoding.h"
 
-#if 0
-#define tracef(...) Tracef(c->uv->tracer, __VA_ARGS__)
+#if 1
+#define tracef(...) Tracef(__VA_ARGS__)
 #else
 #define tracef(...)
 #endif
@@ -191,6 +191,8 @@ static void uvServerAbort(struct uvServer *s)
 /* Invoke the receive callback. */
 static void uvFireRecvCb(struct uvServer *s)
 {
+    tracef("Receiving message %s from %s",
+      message_type_str(s->message.type), s->message.server_address);
     s->uv->recv_cb(s->uv->io, &s->message);
 
     /* Reset our state as we'll start reading a new message. We don't need to
