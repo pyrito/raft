@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 
 #include "../include/raft.h"
 #include "../include/raft/uv.h"
@@ -9,9 +10,9 @@
 #define N_SERVERS 3    /* Number of servers in the example cluster */
 #define APPLY_RATE 125 /* Apply a new entry every 125 milliseconds */
 
-#define Log(SERVER_ID, FORMAT) printf("%d: " FORMAT "\n", SERVER_ID)
+#define Log(SERVER_ID, FORMAT) fprintf(stderr, "%d: " FORMAT "\n", SERVER_ID)
 #define Logf(SERVER_ID, FORMAT, ...) \
-    printf("%d: " FORMAT "\n", SERVER_ID, __VA_ARGS__)
+    fprintf(stderr, "%d: " FORMAT "\n", SERVER_ID, __VA_ARGS__)
 
 /********************************************************************
  *
@@ -19,21 +20,35 @@
  *
  ********************************************************************/
 
+#define CHUNK_SIZE_KB 2048
+#define INTER_OP_INTERVAL_MS 20
+#define RECORD_CNT 100
+
 struct Fsm
 {
     unsigned long long count;
 };
+
+struct timeval stop, start, stop_iter, start_iter;
 
 static int FsmApply(struct raft_fsm *fsm,
                     const struct raft_buffer *buf,
                     void **result)
 {
     struct Fsm *f = fsm->data;
-    if (buf->len != 8) {
+    if ((buf->len != CHUNK_SIZE_KB * 1024) || (
+           strcmp(buf->base + sizeof(uint64_t), "hi there") != 0)) {
+        fprintf(stderr, "Failing... %s %d\n",
+            buf->base + sizeof(uint64_t), strcmp(buf->base + sizeof(uint64_t), "hi there"));
         return RAFT_MALFORMED;
     }
-    f->count += *(uint64_t *)buf->base;
+    f->count += 1;//*(uint64_t *)buf->base;
     *result = &f->count;
+    if (f->count % RECORD_CNT == 0 ) {
+      gettimeofday(&stop_iter, NULL);
+      fprintf(stderr, "Took %ld ms for %d records\n", (stop_iter.tv_sec - start_iter.tv_sec) * 1000 + (stop_iter.tv_usec - start_iter.tv_usec)/1000, RECORD_CNT);
+      gettimeofday(&start_iter, NULL);
+    }
     return 0;
 }
 
@@ -143,10 +158,10 @@ static void serverTimerCloseCb(struct uv_handle_s *handle)
     if (s->raft.data != NULL) {
         if (s->raft.state == RAFT_LEADER) {
             int rv;
-            rv = raft_transfer(&s->raft, &s->transfer, 0, serverTransferCb);
-            if (rv == 0) {
-                return;
-            }
+            //rv = raft_transfer(&s->raft, &s->transfer, 0, serverTransferCb);
+            //if (rv == 0) {
+            //    return;
+            //}
         }
         raft_close(&s->raft, serverRaftCloseCb);
     }
@@ -261,15 +276,14 @@ static void serverApplyCb(struct raft_apply *req, int status, void *result)
     raft_free(req);
     if (status != 0) {
         if (status != RAFT_LEADERSHIPLOST) {
+            fprintf(stderr, "Here....\n");
             Logf(s->id, "raft_apply() callback: %s (%d)", raft_errmsg(&s->raft),
                  status);
         }
         return;
     }
     count = *(int *)result;
-    if (count % 100 == 0) {
-        Logf(s->id, "count %d", count);
-    }
+    //fprintf(stderr, "raft_apply callback count=%d....\n", count);
 }
 
 /* Called periodically every APPLY_RATE milliseconds. */
@@ -284,8 +298,11 @@ static void serverTimerCb(uv_timer_t *timer)
         return;
     }
 
-    buf.len = sizeof(uint64_t);
+    // fprintf(stderr, "Sending out entry....\n");
+    buf.len = CHUNK_SIZE_KB * 1024;
     buf.base = raft_malloc(buf.len);
+    strcpy(buf.base + sizeof(uint64_t), "hi there");
+    //strcpy(((char *)buf.base)-20, "hi there");
     if (buf.base == NULL) {
         Log(s->id, "serverTimerCb(): out of memory");
         return;
@@ -305,6 +322,12 @@ static void serverTimerCb(uv_timer_t *timer)
         Logf(s->id, "raft_apply(): %s", raft_errmsg(&s->raft));
         return;
     }
+    //rv = uv_timer_stop(&s->timer);
+    //if (rv != 0) {
+    //    Logf(s->id, "raft_apply(): %s", raft_errmsg(&s->raft));
+    //    return;
+    //}
+
 }
 
 /* Start the example server. */
@@ -319,7 +342,9 @@ static int ServerStart(struct Server *s)
         Logf(s->id, "raft_start(): %s", raft_errmsg(&s->raft));
         goto err;
     }
-    rv = uv_timer_start(&s->timer, serverTimerCb, 0, 125);
+    gettimeofday(&start, NULL);
+    start_iter = start;
+    rv = uv_timer_start(&s->timer, serverTimerCb, 0, INTER_OP_INTERVAL_MS);
     if (rv != 0) {
         Logf(s->id, "uv_timer_start(): %s", uv_strerror(rv));
         goto err;
@@ -336,8 +361,12 @@ static void ServerClose(struct Server *s, ServerCloseCb cb)
 {
     s->close_cb = cb;
 
+    gettimeofday(&stop, NULL);
     Log(s->id, "stopping");
 
+    struct Fsm *f = s->fsm.data;
+    fprintf(stderr, "Ops/sec = %f",
+      ((float) (f->count))/(stop.tv_sec - start.tv_sec));
     /* Close the timer asynchronously if it was successfully
      * initialized. Otherwise invoke the callback immediately. */
     if (s->timer.data != NULL) {

@@ -6,8 +6,8 @@
 #include "tracing.h"
 
 /* Set to 1 to enable tracing. */
-#if 0
-#define tracef(...) Tracef(r->tracer, __VA_ARGS__)
+#if 1
+#define tracef(...) Tracef(__VA_ARGS__)
 #else
 #define tracef(...)
 #endif
@@ -105,6 +105,17 @@ bool progressIsUpToDate(struct raft *r, unsigned i)
     return p->next_index == last_index + 1;
 }
 
+const char* progStateToStr(int state) {
+    switch (state) {
+        case PROGRESS__SNAPSHOT:
+            return "PROGRESS__SNAPSHOT";
+        case PROGRESS__PROBE:
+            return "PROGRESS__PROBE";
+        case PROGRESS__PIPELINE:
+            return "PROGRESS__PIPELINE";
+    }
+}
+
 bool progressShouldReplicate(struct raft *r, unsigned i)
 {
     struct raft_progress *p = &r->leader_state.progress[i];
@@ -139,6 +150,8 @@ bool progressShouldReplicate(struct raft *r, unsigned i)
             result = !progressIsUpToDate(r, i) || needs_heartbeat;
             break;
     }
+    tracef("Should replicate for arr_idx %d state=%s? last_local_idx=%d next_index=%d, needs_heartbeat=%d progressIsUpToDate=%d verdict=%d",
+      i, progStateToStr(p->state), last_index, p->next_index, needs_heartbeat, progressIsUpToDate(r, i), result);
     return result;
 }
 

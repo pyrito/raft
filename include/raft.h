@@ -147,6 +147,8 @@ RAFT_API int raft_configuration_encode(const struct raft_configuration *c,
  */
 RAFT_API unsigned long long raft_digest(const char *text, unsigned long long n);
 
+const char* message_type_str(int msg_type_enum);
+
 /**
  * Log entry types.
  */

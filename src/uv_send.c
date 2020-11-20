@@ -3,12 +3,13 @@
 #include "../include/raft/uv.h"
 #include "assert.h"
 #include "heap.h"
+#include "../include/raft.h"
 #include "uv.h"
 #include "uv_encoding.h"
 
 /* Set to 1 to enable tracing. */
-#if 0
-#define tracef(...) Tracef(c->uv->tracer, __VA_ARGS__)
+#if 1
+#define tracef(...) Tracef(__VA_ARGS__)
 #else
 #define tracef(...)
 #endif
@@ -239,7 +240,7 @@ static void uvClientSendPending(struct uvClient *c)
 {
     int rv;
     assert(c->stream != NULL);
-    tracef(c, "send pending messages");
+    tracef("send pending messages");
     while (!QUEUE_IS_EMPTY(&c->pending)) {
         queue *head;
         struct uvSend *send;
@@ -480,6 +481,9 @@ int UvSend(struct raft_io *io,
     /* Get a client object connected to the target server, creating it if it
      * doesn't exist yet. */
     rv = uvGetClient(uv, message->server_id, message->server_address, &client);
+    struct uvClient *c = client;
+    tracef("Sending message %s to %s",
+      message_type_str(message->type), message->server_address);
     if (rv != 0) {
         goto err_after_send_alloc;
     }

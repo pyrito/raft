@@ -6,8 +6,8 @@ include_HEADERS = include/raft.h
 raftincludedir = $(includedir)/raft
 raftinclude_HEADERS =
 
-lib_LTLIBRARIES = libraft.la
-libraft_la_CFLAGS = $(AM_CFLAGS) -fvisibility=hidden
+lib_LTLIBRARIES = libraft.la libraft_debug.la
+libraft_la_CFLAGS = $(AM_CFLAGS) -fvisibility=hidden -DNOTRACE
 libraft_la_LDFLAGS = -version-info 0:7:0
 libraft_la_SOURCES = \
   src/byte.c \
@@ -35,7 +35,39 @@ libraft_la_SOURCES = \
   src/state.c \
   src/syscall.c \
   src/tick.c \
-  src/tracing.c
+  src/tracing.c \
+	src/util.c
+
+libraft_debug_la_CFLAGS = $(AM_CFLAGS) -fvisibility=hidden
+libraft_debug_la_LDFLAGS = -version-info 0:7:0
+libraft_debug_la_SOURCES = \
+  src/byte.c \
+  src/client.c \
+  src/configuration.c \
+  src/convert.c \
+  src/election.c \
+  src/entry.c \
+  src/err.c \
+  src/heap.c \
+  src/log.c \
+  src/membership.c \
+  src/progress.c \
+  src/raft.c \
+  src/recv.c \
+  src/recv_append_entries.c \
+  src/recv_append_entries_result.c \
+  src/recv_request_vote.c \
+  src/recv_request_vote_result.c \
+  src/recv_install_snapshot.c \
+  src/recv_timeout_now.c \
+  src/replication.c \
+  src/snapshot.c \
+  src/start.c \
+  src/state.c \
+  src/syscall.c \
+  src/tick.c \
+  src/tracing.c \
+	src/util.c
 
 bin_PROGRAMS =
 
@@ -72,6 +104,7 @@ test_unit_core_LDADD = libtest.la
 if FIXTURE_ENABLED
 
 libraft_la_SOURCES += src/fixture.c
+libraft_debug_la_SOURCES += src/fixture.c
 raftinclude_HEADERS += include/raft/fixture.h
 
 check_PROGRAMS += \
@@ -139,6 +172,28 @@ libraft_la_SOURCES += \
   src/uv_writer.c
 libraft_la_LDFLAGS += $(UV_LIBS)
 
+libraft_debug_la_SOURCES += \
+  src/uv.c \
+  src/uv_append.c \
+  src/uv_encoding.c \
+  src/uv_finalize.c \
+  src/uv_fs.c \
+  src/uv_ip.c \
+  src/uv_list.c \
+  src/uv_metadata.c \
+  src/uv_os.c \
+  src/uv_prepare.c \
+  src/uv_recv.c \
+  src/uv_segment.c \
+  src/uv_send.c \
+  src/uv_snapshot.c \
+  src/uv_tcp.c \
+  src/uv_tcp_listen.c \
+  src/uv_tcp_connect.c \
+  src/uv_truncate.c \
+  src/uv_writer.c
+libraft_debug_la_LDFLAGS += $(UV_LIBS)
+
 raftinclude_HEADERS += include/raft/uv.h
 
 check_PROGRAMS += \
@@ -192,11 +247,16 @@ if EXAMPLE_ENABLED
 
 bin_PROGRAMS += \
  example/server \
- example/cluster
+ example/cluster \
+ example/server_dbg
 
 example_server_SOURCES = example/server.c
 example_server_LDFLAGS = -no-install $(UV_LIBS)
 example_server_LDADD = libraft.la
+
+example_server_dbg_SOURCES = example/server.c
+example_server_dbg_LDFLAGS = -no-install $(UV_LIBS)
+example_server_dbg_LDADD = libraft_debug.la
 
 example_cluster_SOURCES = example/cluster.c
 
