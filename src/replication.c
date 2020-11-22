@@ -371,18 +371,14 @@ static int triggerAll(struct raft *r)
     /* Trigger replication for servers we didn't hear from recently. */
     for (i = 0; i < r->configuration.n; i++) {
         struct raft_server *server = &r->configuration.servers[i];
-        if (server->id != (r->id+1)) {
+        if (server->id != r->next_sibling_id) {
             continue;
         }
-        //if (server->id == r->id) {
-        //    continue;
-        //}
         /* Skip spare servers, unless they're being promoted. */
         if (server->role == RAFT_SPARE &&
             server->id != r->leader_state.promotee_id) {
             continue;
         }
-        // tracef("Calling replicationProgress for %d....", server->id);
         rv = replicationProgress(r, i);
         if (rv != 0 && rv != RAFT_NOCONNECTION) {
             /* This is not a critical failure, let's just log it. */
