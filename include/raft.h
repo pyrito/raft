@@ -703,6 +703,10 @@ struct raft
      * being promoted to voter. */
     unsigned max_catch_up_rounds;
     unsigned max_catch_up_round_duration;
+
+    // Sibling for chain replication
+    raft_id next_sibling_id;
+    raft_id prev_sibling_id; // For heartbeats
 };
 
 RAFT_API int raft_init(struct raft *r,
