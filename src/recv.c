@@ -44,13 +44,16 @@ static int recvMessage(struct raft *r, struct raft_message *message)
 
     struct raft_message message_next = *message;
     struct raft_io_send *req_next;
+
     // The previous server has index r->id.
-    struct raft_server *server = &r->configuration.servers[r->id];
+    struct raft_server *server = &r->configuration.servers[r->next_sibling_id-1];
+
     switch (message->type) {
         case RAFT_IO_APPEND_ENTRIES:
+          // TODO - Enable asserts
+          assert(r->id != message->append_entries.leader_id);
 	        /* Send to the next person in the chain */
-
-          if (r->id < r->configuration.n) {
+          if (r->next_sibling_id != message->append_entries.leader_id) {
             tracef("Chain replicating message to %d %s", server->id, server->address);
             message_next.server_id = server->id;
             message_next.server_address = server->address;
@@ -67,7 +70,9 @@ static int recvMessage(struct raft *r, struct raft_message *message)
                 raft_free(req_next);
                 return rv;
             }
-          } 
+          } else {
+            tracef("Not chain replicating message to leader %d %s", server->id, server->address);
+          }
 
 after_chain_replicate:
 
