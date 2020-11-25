@@ -6,6 +6,12 @@
 #include "../include/raft.h"
 #include "time.h"
 
+enum {
+  DEBUG = 1,
+  INFO,
+  ERROR
+};
+
 /* Default no-op tracer. */
 extern struct raft_tracer NoopTracer;
 
@@ -18,6 +24,10 @@ struct timeval tv;
 #define Tracef(...)                                     \
     do {                                                \
     } while(0)
+#define TracefL(LEVEL, ...)                                     \
+    do {                                                \
+    } while(0)
+
 #else
 #define Tracef(...)                                     \
     do {                                                \

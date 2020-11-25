@@ -26,7 +26,8 @@ static void initProgress(struct raft_progress *p, raft_index last_index)
     p->next_index = last_index + 1;
     p->match_index = 0;
     p->snapshot_index = 0;
-    p->last_send = 0;
+    p->last_append_entries_send = 0;
+    p->last_heartbeat_send = 0;
     p->recent_recv = false;
     p->state = PROGRESS__PROBE;
 }
@@ -120,7 +121,7 @@ bool progressShouldReplicate(struct raft *r, unsigned i)
 {
     struct raft_progress *p = &r->leader_state.progress[i];
     raft_time now = r->io->time(r->io);
-    bool needs_heartbeat = now - p->last_send >= r->heartbeat_timeout;
+    bool has_append_entries_interval_passed = now - p->last_append_entries_send >= r->heartbeat_timeout;
     raft_index last_index = logLastIndex(&r->log);
     bool result = false;
 
@@ -142,16 +143,16 @@ bool progressShouldReplicate(struct raft *r, unsigned i)
             break;
         case PROGRESS__PROBE:
             /* We send at most one message per heatbeat interval. */
-            result = needs_heartbeat;
+            result = !progressIsUpToDate(r, i) && has_append_entries_interval_passed;
             break;
         case PROGRESS__PIPELINE:
             /* In replication mode we send empty append entries messages only if
              * haven't sent anything in the last heartbeat interval. */
-            result = !progressIsUpToDate(r, i) || needs_heartbeat;
+            result = !progressIsUpToDate(r, i);
             break;
     }
-    tracef("Should replicate for arr_idx %d state=%s? last_local_idx=%d next_index=%d, needs_heartbeat=%d progressIsUpToDate=%d verdict=%d",
-      i, progStateToStr(p->state), last_index, p->next_index, needs_heartbeat, progressIsUpToDate(r, i), result);
+    tracef("Should replicate for arr_idx %d state=%s? last_local_idx=%d next_index=%d, has_append_entries_interval_passed=%d progressIsUpToDate=%d verdict=%d",
+      i, progStateToStr(p->state), last_index, p->next_index, has_append_entries_interval_passed, progressIsUpToDate(r, i), result);
     return result;
 }
 
@@ -167,7 +168,7 @@ raft_index progressMatchIndex(struct raft *r, unsigned i)
 
 void progressUpdateLastSend(struct raft *r, unsigned i)
 {
-    r->leader_state.progress[i].last_send = r->io->time(r->io);
+    r->leader_state.progress[i].last_append_entries_send = r->io->time(r->io);
 }
 
 bool progressResetRecentRecv(struct raft *r, const unsigned i)
