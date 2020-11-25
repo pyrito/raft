@@ -34,7 +34,7 @@ static int recvMessage(struct raft *r, struct raft_message *message)
     int rv = 0;
 
     if (message->type < RAFT_IO_APPEND_ENTRIES ||
-        message->type > RAFT_IO_TIMEOUT_NOW) {
+        message->type > RAFT_IO_HEARTBEAT_RESULT) {
         tracef("received unknown message type type: %d", message->type);
         return 0;
     }
@@ -107,7 +107,18 @@ after_chain_replicate:
             rv = recvTimeoutNow(r, message->server_id, message->server_address,
                                 &message->timeout_now);
             break;
-    };
+        case RAFT_IO_HEARTBEAT:
+            rv = recvHeartbeat(r, message->server_id, message->server_address,
+                               &message->heartbeat);
+
+            break;
+        case RAFT_IO_HEARTBEAT_RESULT:
+            rv = recvHeartbeatResult(r, message->server_id, message->server_address,
+                                     &message->heartbeat_result);
+
+            break;
+
+      };
 
     if (rv != 0 && rv != RAFT_NOCONNECTION) {
         /* tracef("recv: %s: %s", message_descs[message->type - 1],

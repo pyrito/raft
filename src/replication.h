@@ -8,6 +8,7 @@
 /* Send AppendEntries RPC messages to all followers to which no AppendEntries
  * was sent in the last heartbeat interval. */
 int replicationHeartbeat(struct raft *r);
+int replicationAppendEntries(struct raft *r);
 
 /* Start a local disk write for entries from the given index onwards, and
  * trigger replication against all followers, typically sending AppendEntries

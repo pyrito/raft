@@ -32,6 +32,15 @@
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
+/* Context of a RAFT_IO_HEARTBEAT request that was submitted with
+ * raft_io_>send(). */
+struct sendHeartbeat
+{
+    struct raft *raft;          /* Instance sending the entries. */
+    struct raft_io_send send;   /* Underlying I/O send request. */
+    raft_id server_id;          /* Destination server. */
+};
+
 /* Context of a RAFT_IO_APPEND_ENTRIES request that was submitted with
  * raft_io_>send(). */
 struct sendAppendEntries
@@ -361,7 +370,7 @@ send_snapshot:
  * This function loops through all followers and triggers replication on them.
  *
  * It must be called only by leaders. */
-static int triggerAll(struct raft *r)
+static int triggerChain(struct raft *r)
 {
     unsigned i;
     int rv;
@@ -390,9 +399,91 @@ static int triggerAll(struct raft *r)
     return 0;
 }
 
+/* Callback invoked after request to send heartbeat RPC has completed. */
+static void sendHeartbeatCb(struct raft_io_send *send, const int status)
+{
+    struct sendHeartbeat *req = send->data;
+    struct raft *r = req->raft;
+    unsigned i = configurationIndexOf(&r->configuration, req->server_id);
+
+    raft_free(req);
+}
+
+static int sendHeartbeat(struct raft *r, struct raft_server *server) {
+    struct raft_message message;
+    struct raft_heartbeat *args = &message.heartbeat;
+    struct sendHeartbeat *req;
+    int rv;
+
+    args->term = r->current_term;
+
+    message.type = RAFT_IO_HEARTBEAT;
+    message.server_id = server->id;
+    message.server_address = server->address;
+
+    req = raft_malloc(sizeof *req);
+    if (req == NULL) {
+        rv = RAFT_NOMEM;
+        goto err;
+    }
+    req->raft = r;
+    req->server_id = server->id;
+
+    req->send.data = req;
+    rv = r->io->send(r->io, &req->send, &message, sendHeartbeatCb);
+    if (rv != 0) {
+        TracefL(ERROR, "Failed to send heartbeat");
+        raft_free(req);
+        goto err;
+    }
+
+err:
+    return rv;
+}
+
 int replicationHeartbeat(struct raft *r)
 {
-    return triggerAll(r);
+    unsigned i;
+    int rv;
+
+    assert(r->state == RAFT_LEADER);
+
+    /* Trigger heartbeats for servers. */
+    for (i = 0; i < r->configuration.n; i++) {
+        struct raft_server *server = &r->configuration.servers[i];
+        if (server->id == r->id) {
+            continue;
+        }
+        /* Skip spare servers, unless they're being promoted. */
+        if (server->role == RAFT_SPARE &&
+            server->id != r->leader_state.promotee_id) {
+            continue;
+        }
+
+        struct raft_progress *p = &r->leader_state.progress[i];
+        raft_time now = r->io->time(r->io);
+        bool needs_heartbeat = now - p->last_heartbeat_send >= r->heartbeat_timeout;
+        if (!needs_heartbeat) {
+            continue;
+        }
+
+        if ((rv = sendHeartbeat(r, server)) != 0) {
+          return rv;
+        }
+
+        if (rv != 0 && rv != RAFT_NOCONNECTION) {
+            /* This is not a critical failure, let's just log it. */
+            tracef("failed to send heartbeat to server %u: %s (%d)",
+                   server->id, raft_strerror(rv), rv);
+        }
+    }
+
+    return 0;
+}
+
+int replicationAppendEntries(struct raft *r)
+{
+    return triggerChain(r);
 }
 
 /* Context for a write log entries request that was submitted by a leader. */
@@ -594,7 +685,7 @@ int replicationTrigger(struct raft *r, raft_index index)
         return rv;
     }
 
-    return triggerAll(r);
+    return triggerChain(r);
 }
 
 /* Helper to be invoked after a promotion of a non-voting server has been
