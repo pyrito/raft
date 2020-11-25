@@ -42,7 +42,6 @@ static size_t sizeofAppendEntries(const struct raft_append_entries *p)
            sizeof(uint64_t) + /* Leader's commit index */
            sizeof(uint64_t) + /* Number of entries in the batch */
            sizeof(uint64_t) + /* Leader's id */
-           //sizeof(strlen(p->leader_address) + 1) + /* Leader's address */
            16 * p->n_entries /* One header per entry */;
 }
 
@@ -71,6 +70,16 @@ static size_t sizeofTimeoutNow(void)
     return sizeof(uint64_t) + /* Term. */
            sizeof(uint64_t) + /* Last log index. */
            sizeof(uint64_t) /* Last log term. */;
+}
+
+static size_t sizeofHeartbeat(void)
+{
+    return sizeof(uint64_t) /* Term */;
+}
+
+static size_t sizeofHeartbeatResult(void)
+{
+    return sizeof(uint64_t) /* Term */;
 }
 
 size_t uvSizeofBatchHeader(size_t n)
@@ -118,9 +127,26 @@ static void encodeAppendEntries(const struct raft_append_entries *p, void *buf)
     bytePut64(&cursor, p->prev_log_term);  /* Previous term. */
     bytePut64(&cursor, p->leader_commit);  /* Leader commit. */
     bytePut64(&cursor, p->leader_id);  /* Leader id. */
-    //bytePutString(&cursor, p->leader_address);  /* Leader address. */
 
     uvEncodeBatchHeader(p->entries, p->n_entries, cursor);
+}
+
+static void encodeHeartbeat(const struct raft_heartbeat *p, void *buf)
+{
+    void *cursor;
+
+    cursor = buf;
+
+    bytePut64(&cursor, p->term);           /* Leader's term. */
+}
+
+static void encodeHeartbeatResult(const struct raft_heartbeat_result *p, void *buf)
+{
+    void *cursor;
+
+    cursor = buf;
+
+    bytePut64(&cursor, p->term);           /* Leader's term. */
 }
 
 static void encodeAppendEntriesResult(
@@ -190,6 +216,12 @@ int uvEncodeMessage(const struct raft_message *message,
         case RAFT_IO_TIMEOUT_NOW:
             header.len += sizeofTimeoutNow();
             break;
+        case RAFT_IO_HEARTBEAT:
+            header.len += sizeofHeartbeat();
+            break;
+        case RAFT_IO_HEARTBEAT_RESULT:
+            header.len += sizeofHeartbeatResult();
+            break;
         default:
             return RAFT_MALFORMED;
     };
@@ -225,6 +257,13 @@ int uvEncodeMessage(const struct raft_message *message,
         case RAFT_IO_TIMEOUT_NOW:
             encodeTimeoutNow(&message->timeout_now, cursor);
             break;
+        case RAFT_IO_HEARTBEAT:
+            encodeHeartbeat(&message->heartbeat, cursor);
+            break;
+        case RAFT_IO_HEARTBEAT_RESULT:
+            encodeHeartbeatResult(&message->heartbeat_result, cursor);
+            break;
+
     };
 
     *n_bufs = 1;
@@ -396,12 +435,43 @@ static int decodeAppendEntries(const uv_buf_t *buf,
     args->prev_log_term = byteGet64(&cursor);
     args->leader_commit = byteGet64(&cursor);
     args->leader_id = byteGet64(&cursor);
-    //args->leader_address = byteGetString(&cursor, 32);
 
     rv = uvDecodeBatchHeader(cursor, &args->entries, &args->n_entries);
     if (rv != 0) {
         return rv;
     }
+
+    return 0;
+}
+
+static int decodeHeartbeat(const uv_buf_t *buf,
+                           struct raft_heartbeat *args)
+{
+    const void *cursor;
+    int rv;
+
+    assert(buf != NULL);
+    assert(args != NULL);
+
+    cursor = buf->base;
+
+    args->term = byteGet64(&cursor);
+
+    return 0;
+}
+
+static int decodeHeartbeatResult(const uv_buf_t *buf,
+                                 struct raft_heartbeat_result *args)
+{
+    const void *cursor;
+    int rv;
+
+    assert(buf != NULL);
+    assert(args != NULL);
+
+    cursor = buf->base;
+
+    args->term = byteGet64(&cursor);
 
     return 0;
 }
@@ -494,6 +564,12 @@ int uvDecodeMessage(const unsigned long type,
             break;
         case RAFT_IO_TIMEOUT_NOW:
             decodeTimeoutNow(header, &message->timeout_now);
+            break;
+        case RAFT_IO_HEARTBEAT:
+            decodeHeartbeat(header, &message->heartbeat);
+            break;
+        case RAFT_IO_HEARTBEAT_RESULT:
+            decodeHeartbeatResult(header, &message->heartbeat_result);
             break;
         default:
             rv = RAFT_IOERR;

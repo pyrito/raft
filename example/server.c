@@ -302,8 +302,9 @@ static void serverTimerCb(uv_timer_t *timer)
     gettimeofday(&temp, NULL);
     if (test_duration_secs < (temp.tv_sec - start.tv_sec)) {
       struct Fsm *f = s->fsm.data;
-      fprintf(stderr, "Ops/sec = %f",
-        ((float) (f->count))/(temp.tv_sec - start.tv_sec));
+      fprintf(stderr, "Ops=%d Ops/sec = %f",
+        f->count, ((float) (f->count))/(temp.tv_sec - start.tv_sec));
+      sleep(2);
        exit(0);    
     }
     if (s->raft.state != RAFT_LEADER) {
@@ -367,8 +368,8 @@ static void ServerClose(struct Server *s, ServerCloseCb cb)
     Log(s->id, "stopping");
 
     struct Fsm *f = s->fsm.data;
-    fprintf(stderr, "Ops/sec = %f",
-      ((float) (f->count))/(stop.tv_sec - start.tv_sec));
+    fprintf(stderr, "Ops=%d Ops/sec = %f",
+      f->count, ((float) (f->count))/(stop.tv_sec - start.tv_sec));
     /* Close the timer asynchronously if it was successfully
      * initialized. Otherwise invoke the callback immediately. */
     if (s->timer.data != NULL) {
@@ -402,7 +403,7 @@ static void mainSigintCb(struct uv_signal_s *handle, int signum)
 
 void parse_options(int argc, char **argv) {
   int opt = 0;
-  while ((opt = getopt(argc, argv, "c:t:r:d:x:y:")) != -1) {
+  while ((opt = getopt(argc, argv, "c:t:r:d:x:y:l:")) != -1) {
     switch (opt) {
       case 'c':
         chunk_size_kb = atoi(optarg);
@@ -422,8 +423,11 @@ void parse_options(int argc, char **argv) {
       case 'y':
         id = atoi(optarg);
         break;
+      case 'l':
+        log_level = atoi(optarg);
+        break;
       default: /* '?' */
-        fprintf(stderr, "Usage: %s [-c <chunk_size_kb> -t <inter_op_interval_ms> -r <gdb_print_record_cnt> -d <test_duration_secs> -x <dir> -y <id>]\n",
+        fprintf(stderr, "Usage: %s [-c <chunk_size_kb> -t <inter_op_interval_ms> -r <gdb_print_record_cnt> -d <test_duration_secs> -x <dir> -y <id> -l <log_level 1,2,3>]\n",
              argv[0]);
         exit(EXIT_FAILURE);
       }

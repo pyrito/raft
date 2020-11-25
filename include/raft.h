@@ -276,6 +276,15 @@ struct raft_append_entries
     raft_id leader_id;
 };
 
+struct raft_heartbeat {
+  raft_term term;
+};
+
+// TODO - Think of issue with brusty heartbeats
+struct raft_heartbeat_result {
+  raft_term term;
+};
+
 /**
  * Hold the result of an AppendEntries RPC (figure 3.1).
  */
@@ -321,7 +330,9 @@ enum {
     RAFT_IO_REQUEST_VOTE,
     RAFT_IO_REQUEST_VOTE_RESULT,
     RAFT_IO_INSTALL_SNAPSHOT,
-    RAFT_IO_TIMEOUT_NOW
+    RAFT_IO_TIMEOUT_NOW,
+    RAFT_IO_HEARTBEAT,
+    RAFT_IO_HEARTBEAT_RESULT
 };
 
 /**
@@ -339,6 +350,8 @@ struct raft_message
         struct raft_append_entries_result append_entries_result;
         struct raft_install_snapshot install_snapshot;
         struct raft_timeout_now timeout_now;
+        struct raft_heartbeat heartbeat;
+        struct raft_heartbeat_result heartbeat_result;
     };
 };
 
@@ -516,7 +529,8 @@ struct raft_progress
     raft_index next_index;     /* Next entry to send. */
     raft_index match_index;    /* Highest index reported as replicated. */
     raft_index snapshot_index; /* Last index of most recent snapshot sent. */
-    raft_time last_send;       /* Timestamp of last AppendEntries RPC. */
+    raft_time last_append_entries_send;       /* Timestamp of last AppendEntries RPC. */
+    raft_time last_heartbeat_send;       /* Timestamp of last Hearbeat RPC. */
     bool recent_recv;          /* A msg was received within election timeout. */
 };
 
