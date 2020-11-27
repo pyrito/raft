@@ -51,6 +51,7 @@ int raft_init(struct raft *r,
     r->configuration_uncommitted_index = 0;
     r->election_timeout = DEFAULT_ELECTION_TIMEOUT;
     r->heartbeat_timeout = DEFAULT_HEARTBEAT_TIMEOUT;
+    r->node_alive_timeout = DEFAULT_HEARTBEAT_TIMEOUT * 5;
     r->commit_index = 0;
     r->last_applied = 0;
     r->last_stored = 0;

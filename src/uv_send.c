@@ -320,7 +320,7 @@ static void uvClientConnectCb(struct raft_uv_connect *req,
     if (n_pending > UV__CLIENT_MAX_PENDING) {
         unsigned i;
         for (i = 0; i < n_pending - UV__CLIENT_MAX_PENDING; i++) {
-            tracef("queue full -> evict oldest message");
+            TracefL(DEBUG, "queue full -> evict oldest message");
             queue *head;
             struct uvSend *old_send;
             struct raft_io_send *old_req;

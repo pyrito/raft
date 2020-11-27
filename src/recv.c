@@ -8,7 +8,10 @@
 #include "membership.h"
 #include "recv_append_entries.h"
 #include "recv_append_entries_result.h"
+#include "recv_heartbeat.h"
+#include "recv_heartbeat_result.h"
 #include "recv_install_snapshot.h"
+#include "recv_relink.h"
 #include "recv_request_vote.h"
 #include "recv_request_vote_result.h"
 #include "recv_timeout_now.h"
@@ -34,7 +37,7 @@ static int recvMessage(struct raft *r, struct raft_message *message)
     int rv = 0;
 
     if (message->type < RAFT_IO_APPEND_ENTRIES ||
-        message->type > RAFT_IO_HEARTBEAT_RESULT) {
+        message->type > RAFT_IO_RELINK) {
         tracef("received unknown message type type: %d", message->type);
         return 0;
     }
@@ -115,6 +118,11 @@ after_chain_replicate:
         case RAFT_IO_HEARTBEAT_RESULT:
             rv = recvHeartbeatResult(r, message->server_id, message->server_address,
                                      &message->heartbeat_result);
+
+            break;
+        case RAFT_IO_RELINK:
+            rv = recvRelink(r, message->server_id, message->server_address,
+                            &message->relink);
 
             break;
 

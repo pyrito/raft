@@ -9,15 +9,28 @@
 #include "tracing.h"
 
 /* Set to 1 to enable tracing. */
-#if 0
-#define tracef(...) Tracef(r->tracer, __VA_ARGS__)
+#if 1
+#define tracef(...) Tracef(__VA_ARGS__)
 #else
 #define tracef(...)
 #endif
 
-static void recvHeartbeatCb(struct raft_io_send *req, int status)
+/* Context of a RAFT_IO_HEARTBEAT request that was submitted with
+ * raft_io_>send(). */
+struct sendHeartbeatResult
 {
-    (void)status;
+    struct raft *raft;          /* Instance sending the entries. */
+    struct raft_io_send send;   /* Underlying I/O send request. */
+    raft_id server_id;          /* Destination server. */
+};
+
+static void sendHeartbeatResultCb(struct raft_io_send *send, int status)
+{
+    struct sendHeartbeatResult *req = send->data;
+    if (status != 0)
+      TracefL(ERROR, "Failed to send heartbeat result to %d %s", req->server_id,
+        errCodeToString(status));
+
     HeapFree(req);
 }
 
@@ -28,7 +41,7 @@ int recvHeartbeat(struct raft *r,
 {
   struct raft_server *server = &r->configuration.servers[id - 1];
   struct raft_message message;
-  struct raft_io_send *req;
+  struct sendHeartbeatResult *req;
   int rv;
 
   // Confirm if the term matches. If not, ignore message.
@@ -51,8 +64,11 @@ int recvHeartbeat(struct raft *r,
     return rv;
   }
 
-  req->data = r;
-  rv = r->io->send(r->io, req, &message, recvHeartbeatCb);
+  req->raft = r;
+  req->server_id = server->id;
+  req->send.data = req;
+
+  rv = r->io->send(r->io, &req->send, &message, sendHeartbeatResultCb);
   if (rv != 0) {
     raft_free(req);
     return rv;

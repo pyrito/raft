@@ -9,7 +9,9 @@
 enum {
     PROGRESS__PROBE = 0, /* At most one AppendEntries per heartbeat interval */
     PROGRESS__PIPELINE,  /* Optimistically stream AppendEntries */
-    PROGRESS__SNAPSHOT   /* Sending a snapshot */
+    PROGRESS__SNAPSHOT,   /* Sending a snapshot */
+    PROGRESS__CHAIN_HOLE_REPLINISH,
+    PROGRESS__DEAD,
 };
 
 /* Create and initialize the array of progress objects used by the leader to *
@@ -59,6 +61,10 @@ bool progressResetRecentRecv(struct raft *r, unsigned i);
  *
  * To be called whenever we receive an AppendEntries RPC result */
 void progressMarkRecentRecv(struct raft *r, unsigned i);
+
+bool progressResetRecentAliveRecv(struct raft *r, const unsigned i);
+
+void progressMarkRecentAliveRecv(struct raft *r, const unsigned i);
 
 /* Convert to the i'th server to snapshot mode. */
 void progressToSnapshot(struct raft *r, unsigned i);

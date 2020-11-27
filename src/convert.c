@@ -192,6 +192,11 @@ int convertToLeader(struct raft *r)
     /* Reset apply requests queue */
     QUEUE_INIT(&r->leader_state.requests);
 
+    /* Reset the next sibling */
+    r->next_sibling_id = r->id == r->configuration.n ? 1 : r->id + 1;
+    assert(r->next_sibling_id <= r->configuration.n);
+    assert(r->next_sibling_id >= 1);
+
     /* Allocate and initialize the progress array. */
     rv = progressBuildArray(r);
     if (rv != 0) {

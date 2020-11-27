@@ -82,6 +82,12 @@ static size_t sizeofHeartbeatResult(void)
     return sizeof(uint64_t) /* Term */;
 }
 
+static size_t sizeofRelink(void)
+{
+    return sizeof(raft_term) /* Term */ +
+           sizeof(raft_id) /* Next sibling id */;
+}
+
 size_t uvSizeofBatchHeader(size_t n)
 {
     return 8 + /* Number of entries in the batch, little endian */
@@ -147,6 +153,16 @@ static void encodeHeartbeatResult(const struct raft_heartbeat_result *p, void *b
     cursor = buf;
 
     bytePut64(&cursor, p->term);           /* Leader's term. */
+}
+
+static void encodeRelink(const struct raft_relink *p, void *buf)
+{
+    void *cursor;
+
+    cursor = buf;
+
+    bytePut64(&cursor, p->term);           /* Term. */
+    bytePut64(&cursor, p->next_sibling_id);           /* Term. */
 }
 
 static void encodeAppendEntriesResult(
@@ -222,6 +238,9 @@ int uvEncodeMessage(const struct raft_message *message,
         case RAFT_IO_HEARTBEAT_RESULT:
             header.len += sizeofHeartbeatResult();
             break;
+        case RAFT_IO_RELINK:
+            header.len += sizeofRelink();
+            break;
         default:
             return RAFT_MALFORMED;
     };
@@ -263,7 +282,9 @@ int uvEncodeMessage(const struct raft_message *message,
         case RAFT_IO_HEARTBEAT_RESULT:
             encodeHeartbeatResult(&message->heartbeat_result, cursor);
             break;
-
+        case RAFT_IO_RELINK:
+            encodeRelink(&message->relink, cursor);
+            break;
     };
 
     *n_bufs = 1;
@@ -460,6 +481,23 @@ static int decodeHeartbeat(const uv_buf_t *buf,
     return 0;
 }
 
+static int decodeRelink(const uv_buf_t *buf,
+                        struct raft_relink *args)
+{
+    const void *cursor;
+    int rv;
+
+    assert(buf != NULL);
+    assert(args != NULL);
+
+    cursor = buf->base;
+
+    args->term = byteGet64(&cursor);
+    args->next_sibling_id = byteGet64(&cursor);
+
+    return 0;
+}
+
 static int decodeHeartbeatResult(const uv_buf_t *buf,
                                  struct raft_heartbeat_result *args)
 {
@@ -570,6 +608,9 @@ int uvDecodeMessage(const unsigned long type,
             break;
         case RAFT_IO_HEARTBEAT_RESULT:
             decodeHeartbeatResult(header, &message->heartbeat_result);
+            break;
+        case RAFT_IO_RELINK:
+            decodeRelink(header, &message->relink);
             break;
         default:
             rv = RAFT_IOERR;

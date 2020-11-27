@@ -403,8 +403,9 @@ static int triggerChain(struct raft *r)
 static void sendHeartbeatCb(struct raft_io_send *send, const int status)
 {
     struct sendHeartbeat *req = send->data;
-    struct raft *r = req->raft;
-    unsigned i = configurationIndexOf(&r->configuration, req->server_id);
+    if (status != 0)
+      TracefL(ERROR, "Failed to send heartbeat to %d %s", req->server_id,
+        errCodeToString(status));
 
     raft_free(req);
 }
@@ -462,10 +463,6 @@ int replicationHeartbeat(struct raft *r)
 
         struct raft_progress *p = &r->leader_state.progress[i];
         raft_time now = r->io->time(r->io);
-        bool needs_heartbeat = now - p->last_heartbeat_send >= r->heartbeat_timeout;
-        if (!needs_heartbeat) {
-            continue;
-        }
 
         if ((rv = sendHeartbeat(r, server)) != 0) {
           return rv;
@@ -626,7 +623,6 @@ out:
 /* Submit a disk write for all entries from the given index onward. */
 static int appendLeader(struct raft *r, raft_index index)
 {
-    tracef("appendLeader....");
     struct raft_entry *entries;
     unsigned n;
     struct appendLeader *request;
@@ -764,6 +760,7 @@ int replicationUpdate(struct raft *r,
     assert(i < r->configuration.n);
 
     progressMarkRecentRecv(r, i);
+    progressMarkRecentAliveRecv(r, i);
 
     /* If the RPC failed because of a log mismatch, retry.
      *
@@ -864,7 +861,7 @@ int replicationUpdate(struct raft *r,
         }
         /* If this follower is in pipeline mode, send it more entries. */
         if (progressState(r, i) == PROGRESS__PIPELINE) {
-            // replicationProgress(r, i);
+            replicationProgress(r, i);
         }
     }
 
