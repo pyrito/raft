@@ -28,6 +28,7 @@ int gdb_print_record_cnt = 0;
 int test_duration_secs = 0;
 const char *dir;
 unsigned id;
+int log_level = 1;
 
 struct Fsm
 {
@@ -435,7 +436,7 @@ int main(int argc, char *argv[])
 {
     parse_options(argc, argv);
 
-    fprintf(stderr, "Test parameters: chunk_size_kb=%d inter_op_interval_ms=%d gdb_print_record_cnt=%d test_duration_secs=%d\n", chunk_size_kb, inter_op_interval_ms, gdb_print_record_cnt, test_duration_secs);
+    fprintf(stderr, "Test parameters: chunk_size_kb=%d inter_op_interval_ms=%d gdb_print_record_cnt=%d test_duration_secs=%d id=%d log_level=%d\n", chunk_size_kb, inter_op_interval_ms, gdb_print_record_cnt, test_duration_secs, id, log_level);
 
     struct uv_loop_s loop;
     struct uv_signal_s sigint; /* To catch SIGINT and exit. */

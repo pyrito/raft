@@ -14,7 +14,7 @@
 #include "uv_encoding.h"
 
 #if 0
-#define tracef(...) Tracef(c->uv->tracer, __VA_ARGS__)
+#define tracef(...) Tracef(__VA_ARGS__)
 #else
 #define tracef(...)
 #endif
@@ -550,8 +550,7 @@ static int uvLoadOpenSegment(struct uv *uv,
                 tracef("%s has non-zero trail", info->filename);
             }
 
-            Tracef(uv->tracer,
-                   "truncate open segment %s at %zu (batch %d), since it has "
+            tracef("truncate open segment %s at %zu (batch %d), since it has "
                    "corrupted "
                    "entries",
                    info->filename, offset, i);
