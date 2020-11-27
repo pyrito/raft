@@ -4,6 +4,7 @@
 #include "convert.h"
 #include "heap.h"
 #include "log.h"
+#include "progress.h"
 #include "recv.h"
 #include "replication.h"
 #include "tracing.h"
@@ -36,8 +37,15 @@ int recvHeartbeatResult(struct raft *r,
     return 0;
   }
 
+  int idx = configurationIndexOf(&r->configuration, id);
+  if (r->leader_state.progress[idx].state == PROGRESS__DEAD) {
+    // TODO: Add node back in.
+    // r->leader_state.progress[idx].state == PROGRESS__PROBE;
+  }
+
   int i = configurationIndexOf(&r->configuration, id);
   progressMarkRecentRecv(r, i);
+  progressMarkRecentAliveRecv(r, i);
   return 0;
 }
 

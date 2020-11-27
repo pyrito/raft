@@ -26,6 +26,7 @@ libraft_la_SOURCES = \
   src/recv_append_entries.c \
   src/recv_heartbeat.c \
   src/recv_heartbeat_result.c \
+	src/recv_relink.c \
   src/recv_append_entries_result.c \
   src/recv_request_vote.c \
   src/recv_request_vote_result.c \
@@ -59,6 +60,7 @@ libraft_debug_la_SOURCES = \
   src/recv_append_entries.c \
   src/recv_heartbeat.c \
   src/recv_heartbeat_result.c \
+	src/recv_relink.c \
   src/recv_append_entries_result.c \
   src/recv_request_vote.c \
   src/recv_request_vote_result.c \

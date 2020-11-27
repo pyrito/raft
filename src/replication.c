@@ -403,9 +403,6 @@ static int triggerChain(struct raft *r)
 static void sendHeartbeatCb(struct raft_io_send *send, const int status)
 {
     struct sendHeartbeat *req = send->data;
-    struct raft *r = req->raft;
-    unsigned i = configurationIndexOf(&r->configuration, req->server_id);
-
     raft_free(req);
 }
 
@@ -462,10 +459,6 @@ int replicationHeartbeat(struct raft *r)
 
         struct raft_progress *p = &r->leader_state.progress[i];
         raft_time now = r->io->time(r->io);
-        bool needs_heartbeat = now - p->last_heartbeat_send >= r->heartbeat_timeout;
-        if (!needs_heartbeat) {
-            continue;
-        }
 
         if ((rv = sendHeartbeat(r, server)) != 0) {
           return rv;
@@ -764,6 +757,7 @@ int replicationUpdate(struct raft *r,
     assert(i < r->configuration.n);
 
     progressMarkRecentRecv(r, i);
+    progressMarkRecentAliveRecv(r, i);
 
     /* If the RPC failed because of a log mismatch, retry.
      *
@@ -864,7 +858,7 @@ int replicationUpdate(struct raft *r,
         }
         /* If this follower is in pipeline mode, send it more entries. */
         if (progressState(r, i) == PROGRESS__PIPELINE) {
-            // replicationProgress(r, i);
+            replicationProgress(r, i);
         }
     }
 
