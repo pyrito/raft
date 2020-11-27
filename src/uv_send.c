@@ -216,7 +216,7 @@ static int uvClientSend(struct uvClient *c, struct uvSend *send)
 
     /* If there's no connection available, let's queue the request. */
     if (c->stream == NULL) {
-        tracef("no connection available -> enqueue message");
+        TracefL(DEBUG, "no connection available -> enqueue message");
         QUEUE_PUSH(&c->pending, &send->queue);
         return 0;
     }
@@ -260,7 +260,7 @@ static void uvClientSendPending(struct uvClient *c)
 static void uvClientTimerCb(uv_timer_t *timer)
 {
     struct uvClient *c = timer->data;
-    tracef("timer expired -> attempt to reconnect");
+    TracefL(DEBUG, "timer expired -> attempt to reconnect");
     uvClientConnect(c); /* Retry to connect. */
 }
 
@@ -282,7 +282,7 @@ static void uvClientConnectCb(struct raft_uv_connect *req,
     unsigned n_pending;
     int rv;
 
-    tracef("connect attempt completed -> status %s", errCodeToString(status));
+    TracefL(DEBUG, "connect attempt completed -> status %s", errCodeToString(status));
 
     assert(c->connect.data != NULL);
     assert(c->stream == NULL);
@@ -482,7 +482,7 @@ int UvSend(struct raft_io *io,
      * doesn't exist yet. */
     rv = uvGetClient(uv, message->server_id, message->server_address, &client);
     struct uvClient *c = client;
-    tracef("Sending message %s to %s",
+    TracefL(DEBUG, "Sending message %s to %s",
       message_type_str(message->type), message->server_address);
     if (rv != 0) {
         goto err_after_send_alloc;

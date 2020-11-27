@@ -191,7 +191,7 @@ static void uvServerAbort(struct uvServer *s)
 /* Invoke the receive callback. */
 static void uvFireRecvCb(struct uvServer *s)
 {
-    tracef("Receiving message %s from %s",
+    TracefL(DEBUG, "Receiving message %s from %s",
       message_type_str(s->message.type), s->message.server_address);
     s->uv->recv_cb(s->uv->io, &s->message);
 

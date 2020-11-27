@@ -26,7 +26,7 @@ int recvAppendEntriesResult(struct raft *r,
     assert(address != NULL);
     assert(result != NULL);
 
-    tracef("recvAppendEntriesResult from %d result_term=%d result_index=%d\n", id,
+    TracefL(INFO, "recvAppendEntriesResult from %d result_term=%d result_index=%d", id,
         result->term, result->last_log_index);
     if (r->state != RAFT_LEADER) {
         tracef("local server is not leader -> ignore");

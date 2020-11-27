@@ -33,8 +33,10 @@ coverage/
 coverage.info
 TAGS
 example/server
+example/server_dbg
 example/cluster
 benchmark/os-disk-write
 tmp
 conftest*
 doc/build
+core*

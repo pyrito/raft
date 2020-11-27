@@ -12,7 +12,7 @@
 #include "uv_os.h"
 
 #if 0
-#define tracef(...) Tracef(c->uv->tracer, __VA_ARGS__)
+#define tracef(...) Tracef(__VA_ARGS__)
 #else
 #define tracef(...)
 #endif
