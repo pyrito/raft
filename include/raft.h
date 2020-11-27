@@ -40,6 +40,7 @@
  */
 #define RAFT_ERRMSG_BUF_SIZE 256
 
+extern int log_level;
 /**
  * Return the error message describing the given error code.
  */
