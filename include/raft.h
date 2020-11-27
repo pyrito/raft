@@ -280,6 +280,11 @@ struct raft_heartbeat {
   raft_term term;
 };
 
+struct raft_relink {
+  raft_term term;
+  raft_id next_sibling_id;
+};
+
 // TODO - Think of issue with brusty heartbeats
 struct raft_heartbeat_result {
   raft_term term;
@@ -332,7 +337,8 @@ enum {
     RAFT_IO_INSTALL_SNAPSHOT,
     RAFT_IO_TIMEOUT_NOW,
     RAFT_IO_HEARTBEAT,
-    RAFT_IO_HEARTBEAT_RESULT
+    RAFT_IO_HEARTBEAT_RESULT,
+    RAFT_IO_RELINK
 };
 
 /**
@@ -352,6 +358,7 @@ struct raft_message
         struct raft_timeout_now timeout_now;
         struct raft_heartbeat heartbeat;
         struct raft_heartbeat_result heartbeat_result;
+        struct raft_relink relink;
     };
 };
 
@@ -530,8 +537,11 @@ struct raft_progress
     raft_index match_index;    /* Highest index reported as replicated. */
     raft_index snapshot_index; /* Last index of most recent snapshot sent. */
     raft_time last_append_entries_send;       /* Timestamp of last AppendEntries RPC. */
-    raft_time last_heartbeat_send;       /* Timestamp of last Hearbeat RPC. */
     bool recent_recv;          /* A msg was received within election timeout. */
+    bool recent_alive_recv;    /* A msg was received within chain liveness timeout. */
+    raft_id next_sibling_id;    /* Next sibling id*/
+    raft_time node_alive_start;    /* Start of timer from which we check for node_alive_timeout to find faults in chain*/
+    raft_index replenish_till_index; /* In case state is PROGRESS__CHAIN_HOLE_REPLINISH, replenish till this index */
 };
 
 struct raft; /* Forward declaration. */
@@ -629,6 +639,7 @@ struct raft
      *   election timeouts.
      */
     unsigned heartbeat_timeout;
+    unsigned node_alive_timeout;
 
     /*
      * The fields below hold the part of the server's volatile state which is
@@ -720,7 +731,6 @@ struct raft
 
     // Sibling for chain replication
     raft_id next_sibling_id;
-    raft_id prev_sibling_id; // For heartbeats
 };
 
 RAFT_API int raft_init(struct raft *r,

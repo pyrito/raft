@@ -18,5 +18,7 @@ const char* message_type_str(int msg_type_enum) {
       return "RAFT_IO_HEARTBEAT";
     case RAFT_IO_HEARTBEAT_RESULT:
       return "RAFT_IO_HEARTBEAT_RESULT";
+    case RAFT_IO_RELINK:
+      return "RAFT_IO_RELINK";
  };
 }

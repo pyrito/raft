@@ -4,13 +4,14 @@
 #include "convert.h"
 #include "heap.h"
 #include "log.h"
+#include "progress.h"
 #include "recv.h"
 #include "replication.h"
 #include "tracing.h"
 
 /* Set to 1 to enable tracing. */
-#if 0
-#define tracef(...) Tracef(r->tracer, __VA_ARGS__)
+#if 1
+#define tracef(...) Tracef(__VA_ARGS__)
 #else
 #define tracef(...)
 #endif
@@ -36,8 +37,17 @@ int recvHeartbeatResult(struct raft *r,
     return 0;
   }
 
+  int idx = configurationIndexOf(&r->configuration, id);
+  if (r->leader_state.progress[idx].state == PROGRESS__DEAD) {
+    // TODO: Add node back in. Replenish it to at least the index entry of the leader's next sibling and
+    // add it to the end of the chain.
+    r->leader_state.progress[idx].state = PROGRESS__CHAIN_HOLE_REPLINISH;
+    
+  }
+
   int i = configurationIndexOf(&r->configuration, id);
   progressMarkRecentRecv(r, i);
+  progressMarkRecentAliveRecv(r, i);
   return 0;
 }
 

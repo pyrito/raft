@@ -272,6 +272,11 @@ grant_vote:
         r->election_timer_start = r->io->time(r->io);
     }
 
+    /* Reset the next sibling */
+    // TODO - Doesn't work with leader failure. Works only in the first election.
+    r->next_sibling_id = r->id == r->configuration.n ? 1 : r->id + 1;
+    assert(r->next_sibling_id <= r->configuration.n);
+    assert(r->next_sibling_id >= 1);
     *granted = true;
 
     return 0;
