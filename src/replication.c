@@ -62,7 +62,7 @@ static void sendAppendEntriesCb(struct raft_io_send *send, const int status)
 
     if (r->state == RAFT_LEADER && i < r->configuration.n) {
         if (status != 0) {
-            tracef("failed to send append entries to server %u: %s",
+            TracefL(DEBUG, "failed to send append entries to server %u: %s",
                    req->server_id, raft_strerror(status));
             /* Go back to probe mode. */
             progressToProbe(r, i);
@@ -103,6 +103,8 @@ static int sendAppendEntries(struct raft *r,
     args->term = r->current_term;
     args->prev_log_index = prev_index;
     args->prev_log_term = prev_term;
+    args->chain_incarnation_id = r->chain_incarnation_id;
+    args->should_send_to_next_sibling = r->should_send_to_next_sibling;
 
     /* TODO: implement a limit to the total size of the entries being sent */
     rv = logAcquire(&r->log, next_index, &args->entries, &args->n_entries);
@@ -120,7 +122,7 @@ static int sendAppendEntries(struct raft *r,
      */
     args->leader_commit = r->commit_index;
 
-    tracef("send %u entries starting at %llu + 1 to server %u (last log index on leader is %llu)",
+    TracefL(DEBUG, "send %u entries starting at %llu + 1 to server %u (last log index on leader is %llu)",
            args->n_entries, args->prev_log_index, server->id,
            logLastIndex(&r->log));
 
@@ -310,7 +312,9 @@ int replicationProgress(struct raft *r, unsigned i)
 {
     struct raft_server *server = &r->configuration.servers[i];
     raft_index snapshot_index = logSnapshotIndex(&r->log);
+
     raft_index next_index = progressNextIndex(r, i);
+
     raft_index prev_index;
     raft_term prev_term;
 
@@ -380,9 +384,8 @@ static int triggerChain(struct raft *r)
     /* Trigger replication for servers we didn't hear from recently. */
     for (i = 0; i < r->configuration.n; i++) {
         struct raft_server *server = &r->configuration.servers[i];
-        if (server->id != r->next_sibling_id) {
-            continue;
-        }
+        if (server->id == r->id)
+          continue;
         /* Skip spare servers, unless they're being promoted. */
         if (server->role == RAFT_SPARE &&
             server->id != r->leader_state.promotee_id) {
@@ -404,7 +407,7 @@ static void sendHeartbeatCb(struct raft_io_send *send, const int status)
 {
     struct sendHeartbeat *req = send->data;
     if (status != 0)
-      TracefL(ERROR, "Failed to send heartbeat to %d %s", req->server_id,
+      TracefL(DEBUG, "Failed to send heartbeat to %d %s", req->server_id,
         errCodeToString(status));
 
     raft_free(req);
@@ -799,6 +802,16 @@ int replicationUpdate(struct raft *r,
      *
      *   If successful update nextIndex and matchIndex for follower.
      */
+    if (result->should_send_to_next_sibling) {
+      // Via chain
+      if (r->chain_incarnation_id != result->chain_incarnation_id)
+        return 0;
+    } else {
+      // Via multicast
+      if (!r->should_send_to_next_sibling)
+        return 0;
+    }
+
     if (!progressMaybeUpdate(r, i, last_index)) {
         return 0;
     }

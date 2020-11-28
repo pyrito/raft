@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <pthread.h>
 
 #define RAFT_API __attribute__((visibility("default")))
 
@@ -274,6 +275,8 @@ struct raft_append_entries
     struct raft_entry *entries; /* Log entries to append. */
     unsigned n_entries;         /* Size of the log entries array. */
     raft_id leader_id;
+    int chain_incarnation_id;   /* -1 if multicast i.e., if below flag is false */
+    bool should_send_to_next_sibling; /* Flag to decide whether to chain or not */
 };
 
 struct raft_heartbeat {
@@ -298,6 +301,8 @@ struct raft_append_entries_result
     raft_term term;            /* Receiver's current_term. */
     raft_index rejected;       /* If non-zero, the index that was rejected. */
     raft_index last_log_index; /* Receiver's last log entry index, as hint. */
+    int chain_incarnation_id;   /* -1 if multicast i.e., if below flag is false */
+    bool should_send_to_next_sibling;
 };
 
 /**
@@ -539,9 +544,9 @@ struct raft_progress
     raft_time last_append_entries_send;       /* Timestamp of last AppendEntries RPC. */
     bool recent_recv;          /* A msg was received within election timeout. */
     bool recent_alive_recv;    /* A msg was received within chain liveness timeout. */
-    raft_id next_sibling_id;    /* Next sibling id*/
+    raft_id next_sibling_id;    /* Next sibling id. 0 if multicast node*/
     raft_time node_alive_start;    /* Start of timer from which we check for node_alive_timeout to find faults in chain*/
-    raft_index replenish_till_index; /* In case state is PROGRESS__CHAIN_HOLE_REPLINISH, replenish till this index */
+    bool dead;
 };
 
 struct raft; /* Forward declaration. */
@@ -682,6 +687,9 @@ struct raft
             raft_index round_index;         /* Target of the current round. */
             raft_time round_start;          /* Start of current round. */
             void *requests[2];              /* Outstanding client requests. */
+            unsigned long long num_relink_callback_successes;
+            unsigned long long num_relink_callbacks_received;
+            pthread_mutex_t chain_modification_lock;
         } leader_state;
     };
 
@@ -731,6 +739,8 @@ struct raft
 
     // Sibling for chain replication
     raft_id next_sibling_id;
+    bool should_send_to_next_sibling;
+    int chain_incarnation_id;   /* Starts from 0 */
 };
 
 RAFT_API int raft_init(struct raft *r,

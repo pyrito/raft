@@ -8,6 +8,7 @@
 #include "progress.h"
 #include "queue.h"
 #include "request.h"
+#include "tracing.h"
 
 /* Set to 1 to enable tracing. */
 #if 0
@@ -204,12 +205,17 @@ int convertToLeader(struct raft *r)
     }
 
     r->leader_state.change = NULL;
+    r->chain_incarnation_id = 0;
 
     /* Reset promotion state. */
     r->leader_state.promotee_id = 0;
     r->leader_state.round_number = 0;
     r->leader_state.round_index = 0;
     r->leader_state.round_start = 0;
+    if (pthread_mutex_init(&r->leader_state.chain_modification_lock, NULL) != 0) { 
+        TracefL(ERROR, "\n mutex init has failed\n");
+        return -1;
+    } 
 
     return 0;
 }

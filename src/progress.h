@@ -9,9 +9,7 @@
 enum {
     PROGRESS__PROBE = 0, /* At most one AppendEntries per heartbeat interval */
     PROGRESS__PIPELINE,  /* Optimistically stream AppendEntries */
-    PROGRESS__SNAPSHOT,   /* Sending a snapshot */
-    PROGRESS__CHAIN_HOLE_REPLINISH,
-    PROGRESS__DEAD,
+    PROGRESS__SNAPSHOT   /* Sending a snapshot */
 };
 
 /* Create and initialize the array of progress objects used by the leader to *

@@ -191,10 +191,14 @@ static void uvServerAbort(struct uvServer *s)
 /* Invoke the receive callback. */
 static void uvFireRecvCb(struct uvServer *s)
 {
-    TracefL(DEBUG, "Receiving message %s from %s",
-      message_type_str(s->message.type), s->message.server_address);
-    s->uv->recv_cb(s->uv->io, &s->message);
+    if (s->message.type != RAFT_IO_HEARTBEAT && s->message.type != RAFT_IO_HEARTBEAT_RESULT)
+      TracefL(INFO, "Receiving message %s from %s",
+        message_type_str(s->message.type), s->message.server_address);
+    else
+      TracefL(DEBUG, "Receiving message %s from %s",
+        message_type_str(s->message.type), s->message.server_address);
 
+    s->uv->recv_cb(s->uv->io, &s->message);
     /* Reset our state as we'll start reading a new message. We don't need to
      * release the payload buffer, since ownership was transfered to the
      * user. */
