@@ -31,6 +31,41 @@ static void chainReplicateCb(struct raft_io_send *req, int status)
    HeapFree(req);
 }
 
+void chainReplicateMessage(struct raft *r, struct raft_message *message) {
+    struct raft_message message_next = *message;
+    struct raft_io_send *req_next;
+
+    // The previous server has index r->id.
+    struct raft_server *server = &r->configuration.servers[r->next_sibling_id-1];
+
+    /* Send to the next person in the chain */
+    if (r->next_sibling_id != message->append_entries.leader_id) {
+      if (r->next_sibling_id == 0) {
+        TracefL(ERROR, "The next_sibling_id is 0 but we got a message to be relayed.");
+        assert(false); // Can't reach here
+      }
+      TracefL(INFO, "Chain replicating message to %d %s", server->id, server->address);
+      message_next.server_id = server->id;
+      message_next.server_address = server->address;
+
+      req_next = raft_malloc(sizeof *req_next);
+      if (req_next == NULL) {
+          TracefL(ERROR, "No memory, can't chain replicate!!!");
+          return;
+      }
+      memset(req_next, 0, sizeof(struct raft_io_send));
+
+      int rv = r->io->send(r->io, req_next, &message_next, NULL);
+      if (rv != 0) {
+          raft_free(req_next);
+          TracefL(ERROR, "Failed to chain replicate!!!");
+          return;
+      }
+    } else {
+      TracefL(INFO, "Not chain replicating message to leader %d %s", server->id, server->address);
+    }
+}
+
 /* Dispatch a single RPC message to the appropriate handler. */
 static int recvMessage(struct raft *r, struct raft_message *message)
 {
@@ -45,39 +80,12 @@ static int recvMessage(struct raft *r, struct raft_message *message)
     /* tracef("%s from server %ld", message_descs[message->type - 1],
        message->server_id); */
 
-    struct raft_message message_next = *message;
-    struct raft_io_send *req_next;
-
-    // The previous server has index r->id.
-    struct raft_server *server = &r->configuration.servers[r->next_sibling_id-1];
-
     switch (message->type) {
         case RAFT_IO_APPEND_ENTRIES:
-          // TODO - Enable asserts
-          assert(r->id != message->append_entries.leader_id);
-	        /* Send to the next person in the chain */
-          if (r->next_sibling_id != message->append_entries.leader_id) {
-            tracef("Chain replicating message to %d %s", server->id, server->address);
-            message_next.server_id = server->id;
-            message_next.server_address = server->address;
-
-            req_next = raft_malloc(sizeof *req_next);
-            if (req_next == NULL) {
-                rv = RAFT_NOMEM;
-                goto after_chain_replicate;
-            }
-            memset(req_next, 0, sizeof(struct raft_io_send));
-
-            rv = r->io->send(r->io, req_next, &message_next, NULL);
-            if (rv != 0) {
-                raft_free(req_next);
-                return rv;
-            }
-          } else {
-            tracef("Not chain replicating message to leader %d %s", server->id, server->address);
-          }
-
-after_chain_replicate:
+           assert(r->id != message->append_entries.leader_id);
+           if (message->append_entries.should_send_to_next_sibling) {
+             chainReplicateMessage(r, message);
+           }
 
             rv = recvAppendEntries(r, message->server_id,
                                    message->server_address,

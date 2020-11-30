@@ -37,13 +37,13 @@ int recvHeartbeatResult(struct raft *r,
     return 0;
   }
 
-  int idx = configurationIndexOf(&r->configuration, id);
-  if (r->leader_state.progress[idx].state == PROGRESS__DEAD) {
-    // TODO: Add node back in. Replenish it to at least the index entry of the leader's next sibling and
-    // add it to the end of the chain.
-    r->leader_state.progress[idx].state = PROGRESS__CHAIN_HOLE_REPLINISH;
-    
-  }
+  //int idx = configurationIndexOf(&r->configuration, id);
+  //TracefL(INFO, "heartbeat id=%d, state=%s", id, progStateToStr(r->leader_state.progress[idx].state));
+  //if (r->leader_state.progress[idx].state == PROGRESS__DEAD) {
+  //  // Add node back in multicast mode.
+  //  printf("we are ADDING BACK TO MULTICAST MODE YEET\n");
+  //  r->leader_state.progress[idx].state = PROGRESS__PROBE;
+  //}
 
   int i = configurationIndexOf(&r->configuration, id);
   progressMarkRecentRecv(r, i);

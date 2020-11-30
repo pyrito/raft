@@ -122,12 +122,12 @@ struct sendRelink
 {
     struct raft *raft;          /* Instance sending the entries. */
     struct raft_io_send send;   /* Underlying I/O send request. */
-    int rescuer_idx;          /* Rescuer idx. */
-    raft_id rescuer_id;
-    raft_id victim_id;          /* Victim id. */
+    raft_id id;
+    raft_id next_sibling_id;          /* Victim id. */
+    int chain_incarnation_id;
 };
 
-static void sendRelink(struct raft *r, int rescuer_idx, raft_id rescuer_id, raft_id victim_id);
+static int sendRelink(struct raft *r, raft_id id, raft_id next_sibling_id);
 static void sendRelinkCb(struct raft_io_send *send, const int status);
 
 /* Callback invoked after request to send relink RPC has completed. */
@@ -135,98 +135,197 @@ static void sendRelinkCb(struct raft_io_send *send, const int status)
 {
     struct sendRelink *req = send->data;
     struct raft *r = req->raft;
-    if (status != 0) {
-      TracefL(ERROR, "Failed to send relink to idx %d %s", req->rescuer_idx,
+    TracefL(INFO, "sendRelinkCb for node %d", req->id);
+
+    if (status != 0 && r->chain_incarnation_id == req->chain_incarnation_id) {
+      TracefL(ERROR, "Failed to send relink to id %d %s", req->id,
         errCodeToString(status));
-      // TODO - Add a sleep here!
-      sendRelink(r, req->rescuer_idx, req->rescuer_id, req->victim_id);
-    }
-    else {
-      // Update the leader's view of the chain. Set next_sibling for node at rescuer_id to the victim's id.
-      r->leader_state.progress[req->rescuer_idx].next_sibling_id = req->victim_id;
+      switchToPureMulticast(r);
     }
 
     raft_free(req);
 }
 
-static void sendRelink(struct raft *r, int rescuer_idx, raft_id rescuer_id, raft_id victim_id) {
+static int sendRelink(struct raft *r, raft_id id, raft_id next_sibling_id) {
     struct raft_message message;
     struct raft_relink *args = &message.relink;
     struct sendRelink *req;
     int rv;
 
-    if (PROGRESS__DEAD == r->leader_state.progress[rescuer_idx].state) {
-      return;
-    }
-
-    TracefL(INFO, "Sending relink to rescuer %d with victim id %d", rescuer_id, victim_id);
+    TracefL(INFO, "Sending relink to node id %d with next sibling id %d", id, next_sibling_id);
     args->term = r->current_term;
-    args->next_sibling_id = victim_id;
+    args->next_sibling_id = next_sibling_id;
 
     message.type = RAFT_IO_RELINK;
-    message.server_id = rescuer_id;
-    message.server_address = r->configuration.servers[rescuer_idx].address;
+    message.server_id = id;
+    message.server_address = r->configuration.servers[configurationIndexOf(&r->configuration, id)].address;
 
     req = raft_malloc(sizeof *req);
     if (req == NULL) {
         rv = RAFT_NOMEM;
-        TracefL(ERROR, "Failed to send relink message to rescuer id %d for victim id %d because of no memory", rescuer_id, victim_id);
-        // TODO - Add a sleep here!
-        sendRelink(r, rescuer_idx, rescuer_id, victim_id);
+        TracefL(ERROR, "Failed to send relink message to id %d for next_sibling_id %d because of no memory", id, next_sibling_id);
+        return rv;
     }
     req->raft = r;
-    req->rescuer_idx = rescuer_idx;
-    req->victim_id = victim_id;
+    req->next_sibling_id = next_sibling_id;
+    req->id = id;
+    req->chain_incarnation_id = r->chain_incarnation_id;
 
     req->send.data = req;
     rv = r->io->send(r->io, &req->send, &message, sendRelinkCb);
     if (rv != 0) {
-        TracefL(ERROR, "Failed to send relink message to rescuer id %d for victim id %d", rescuer_id, victim_id);
+        TracefL(ERROR, "Failed to send relink message to id %d for next_sibling_id %d", id, next_sibling_id);
         raft_free(req);
-        sendRelink(r, rescuer_idx, rescuer_id, victim_id);
+        return rv;
     }
+    return 0;
+}
+
+void switchToPureMulticast(struct raft *r) {
+   TracefL(INFO, "Chain modification: switchToPureMulticast");
+   r->next_sibling_id = 0;
+   r->should_send_to_next_sibling = false;
+   for (int i = 0; i < r->configuration.n; i++) {
+     struct raft_progress *progress = &(r->leader_state.progress[i]);
+     progress->next_sibling_id = 0;
+   }
+   TracefL(INFO, "Chain modification: Finished switching to pure multicast");
 }
 
 void handleDeadNode(struct raft *r, int i) {
-    TracefL(INFO, "Node %d is down. Relink!!!", r->configuration.servers[i].id);
-    r->leader_state.progress[i].state = PROGRESS__DEAD;
-
-    // Perform relinking steps.
-    raft_id rescuer_id = findNodeWithNextSibling(r, r->configuration.servers[i].id);
-    int rescuer_idx = configurationIndexOf(&r->configuration, rescuer_id);
-    raft_id victim_id = r->leader_state.progress[i].next_sibling_id;
-    int victim_idx = configurationIndexOf(&r->configuration, victim_id);
-    int next_sibling_idx = configurationIndexOf(&r->configuration, r->next_sibling_id);
-
-    // Mark victim node's progress to signify that it's hole has to be filled with
-    // respect to the rescuer node. Also, note that index of entry till which we should fill the victim
-    // to ensure no hole will exist when the rescuer starts relaying messages to the victim.
-    // Note that this will also ensure that the leader doesn't replicate more entries to non victim nodes
-    // till holes are filled at victims.
-    if (victim_id != r->id) {
-      TracefL(INFO, "The victim is the leader, don't replenish");
-      r->leader_state.progress[victim_idx].state = PROGRESS__CHAIN_HOLE_REPLINISH;
-      r->leader_state.progress[victim_idx].replenish_till_index = r->leader_state.progress[next_sibling_idx].next_index - 1;
+    if (r->leader_state.progress[i].next_sibling_id != 0) {
+      TracefL(INFO, "Node %d is down.", r->configuration.servers[i].id);
+      switchToPureMulticast(r);
     }
 
-    if (rescuer_id == r->id) {
-      r->next_sibling_id = victim_id;
+    //r->leader_state.progress[i].state = PROGRESS__DEAD;
+}
 
-      // Reset the next sibling id for the failed node.
-      r->leader_state.progress[i].next_sibling_id = -1;
-    } else {
-      // Update the leader's view of the chain. Set next_sibling for node at rescuer_id to the victim's id.
-      // NOTE: Update this before the relink occurs at the rescuer. Why? Think about the case where the rescuer dies before
-      // the relink message reaches it.
-      r->leader_state.progress[rescuer_idx].next_sibling_id = victim_id;
+typedef struct chainNode {
+  raft_id id;
+  raft_index next_index;
+} chainNode;
 
-      // Reset the next sibling id for the failed node.
-      r->leader_state.progress[i].next_sibling_id = -1;
+int compChainNode(const void *elem1, const void *elem2) 
+{
+  
+  return ((chainNode*)elem1)->next_index >= ((chainNode*)elem2)->next_index;
+}
 
-      // Notify the rescuer id node to conform to leader's view of the chain.
-      // NOTE: This has to be the last call in this method. Don't do anything after this without caution.
-      sendRelink(r, rescuer_idx, rescuer_id, victim_id);
-    }
+bool moreHealthyChainExists(struct raft *r) {
+   int current_chain_len = 0;
+   if (r->should_send_to_next_sibling) {
+     current_chain_len = 1;
+     int crwl_id = r->next_sibling_id;
+     while (crwl_id != r->id) {
+       current_chain_len++;
+       int idx = configurationIndexOf(&r->configuration, crwl_id);
+       crwl_id = r->leader_state.progress[idx].next_sibling_id;
+     }
+   }
+
+   int cnt_alive_nodes_including_leader = 1;
+   for (int i = 0; i < r->configuration.n; i++) {
+     struct raft_progress *progress = &(r->leader_state.progress[i]);
+     if(r->configuration.servers[i].id != r->id && !progress->dead)
+       cnt_alive_nodes_including_leader++; 
+   }
+
+   if (cnt_alive_nodes_including_leader > current_chain_len && cnt_alive_nodes_including_leader >= 3) {
+     TracefL(INFO, "Chain modification: moreHealthyChainExists cnt_alive_nodes_including_leader=%d current_chain_len=%d", cnt_alive_nodes_including_leader, current_chain_len);
+     return true;
+   }
+   // TracefL(DEBUG, "Chain modification: moreHealthyChainExists cnt_alive_nodes_including_leader=%d current_chain_len=%d", cnt_alive_nodes_including_leader, current_chain_len);
+   return false;
+}
+
+void reformChain(struct raft *r) {
+   /*
+    1. Check if a chain of significant length can be formed out of non-DEAD nodes.
+    2. Pause sendAppendEntries.
+    3. Send re-link messages.
+    4. If all re-link messages pass, update progress struct to mark next_sibling for nodes. Else, return.
+
+    When sending sendAppendEntries, add a flag to indicate if the next_sibling is supposed to be used or not.
+   */
+   // TODO - Don't always relink alive nodes. What if they have index entries far apart?
+   int cnt_alive_nodes_excluding_leader = 0;
+   for (int i = 0; i < r->configuration.n; i++) {
+     struct raft_progress *progress = &(r->leader_state.progress[i]);
+     if (!progress->dead && r->configuration.servers[i].id != r->id)
+       cnt_alive_nodes_excluding_leader++; 
+   }
+
+   TracefL(INFO, "Chain modification: Num alive nodes: %d", cnt_alive_nodes_excluding_leader);
+   raft_index *next_indices;
+   chainNode *nodes;
+   nodes = (chainNode *) malloc(sizeof(chainNode) * cnt_alive_nodes_excluding_leader);
+
+   int crwl = 0;
+   for (int i = 0; i < r->configuration.n; i++) {
+      struct raft_progress *progress = &(r->leader_state.progress[i]);
+      if (!progress->dead && r->configuration.servers[i].id != r->id) {
+         nodes[crwl].id = r->configuration.servers[i].id;
+         nodes[crwl].next_index = r->leader_state.progress[i].next_index;
+         crwl++;
+      }
+   }
+ 
+   qsort(nodes, cnt_alive_nodes_excluding_leader, sizeof(chainNode), compChainNode);
+
+   r->chain_incarnation_id++;
+
+   char* node_ids_str = malloc(3*cnt_alive_nodes_excluding_leader*sizeof(char));
+   if (node_ids_str == NULL) {
+     TracefL(ERROR, "Failed to malloc");
+   }
+   memset(node_ids_str, 0, 3*cnt_alive_nodes_excluding_leader*sizeof(char));
+   for (int i = 0; i <cnt_alive_nodes_excluding_leader; i++) {
+     TracefL(INFO, "Chain modification: Alive node %d", nodes[i].id);
+     char str[12] = {0};
+     sprintf(str, "%d, ", nodes[i].id);
+     strcat(node_ids_str, str);
+   }
+
+   TracefL(INFO, "Chain modification: Reforming chain with alive nodes %s", node_ids_str);
+
+   // Send relink messages
+   for (int i=0; i<cnt_alive_nodes_excluding_leader-1; i++) {
+     TracefL(INFO, "Calling relink for nodes[i].id: %d, next_sibling: %d", nodes[i].id,  nodes[(i+1)%cnt_alive_nodes_excluding_leader].id);
+     if (sendRelink(r, nodes[i].id, nodes[(i+1)%cnt_alive_nodes_excluding_leader].id) != 0) {
+       return;
+     } 
+   }
+   if (sendRelink(r, nodes[cnt_alive_nodes_excluding_leader-1].id, r->id) != 0) {
+     return;
+   }
+  
+   // Set the next_sibling in progress struct
+   for (int i = 0; i <cnt_alive_nodes_excluding_leader-1; i++) {
+      int node_idx = configurationIndexOf(&r->configuration, nodes[i].id);
+      struct raft_progress *progress = &(r->leader_state.progress[node_idx]);
+      progress->next_sibling_id = nodes[(i+1)%cnt_alive_nodes_excluding_leader].id;
+   }
+
+   int node_idx = configurationIndexOf(&r->configuration, nodes[cnt_alive_nodes_excluding_leader-1].id);
+   struct raft_progress *progress = &(r->leader_state.progress[node_idx]);
+   progress->next_sibling_id = r->id;
+
+   r->next_sibling_id = nodes[0].id;
+
+   r->should_send_to_next_sibling = true;
+
+   // Reset next_indices to what we saw when we sorted
+   for (int i = 0; i <cnt_alive_nodes_excluding_leader; i++) {
+      int node_idx = configurationIndexOf(&r->configuration, nodes[i].id);
+      struct raft_progress *progress = &(r->leader_state.progress[node_idx]);
+      progress->next_index = nodes[i].next_index;
+   }
+
+   TracefL(INFO, "Chain modification: New chain incarnation id %d with nodes: %s\n", r->chain_incarnation_id, node_ids_str);
+   // TODO - Change update of next_index in recvAppendEntriesResult path. Check both
+   // optimistic and non-optimistic cases.
+
 }
 
 /* Apply time-dependent rules for leaders (Figure 3.1). */
@@ -255,19 +354,27 @@ static int tickLeader(struct raft *r)
     for (int i = 0; i < r->configuration.n; i++) {
         struct raft_server *server = &r->configuration.servers[i];
         struct raft_progress *progress = &(r->leader_state.progress[i]);
-        if (server->id == r->id || progress->state == PROGRESS__DEAD) {
+        if (server->id == r->id) {
             continue;
         }
-        TracefL(INFO, "Checking alive timer for node idx %d with id %d, node_alive_start=%d node_alive_timeout=%d now=%d recent_alive_recv=%d",
-          i, server->id, progress->node_alive_start, r->node_alive_timeout, now, progress->recent_alive_recv);
+        //TracefL(INFO, "Checking alive timer for node idx %d with id %d, node_alive_start=%d node_alive_timeout=%d now=%d recent_alive_recv=%d, state=%d",
+        //  i, server->id, progress->node_alive_start, r->node_alive_timeout, now, progress->recent_alive_recv, progress->state);
         if ((now - progress->node_alive_start >= r->node_alive_timeout)) {
           if (!progress->recent_alive_recv) {
+            progress->dead = true;
             handleDeadNode(r, i);
           } else {
             progress->node_alive_start = r->io->time(r->io);
+            progress->dead = false;
           }
           progressResetRecentAliveRecv(r, i);
         }
+    }
+
+    if (moreHealthyChainExists(r)) {
+      TracefL(INFO, "We found a healthier chain, switching to pure multicast");
+      switchToPureMulticast(r); 
+      reformChain(r);
     }
 
     if (now - r->election_timer_start >= r->election_timeout) {

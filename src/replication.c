@@ -103,6 +103,10 @@ static int sendAppendEntries(struct raft *r,
     args->term = r->current_term;
     args->prev_log_index = prev_index;
     args->prev_log_term = prev_term;
+    args->chain_incarnation_id = r->chain_incarnation_id;
+    args->should_send_to_next_sibling = r->should_send_to_next_sibling;
+    TracefL(DEBUG, "Sending append entries with incarnation %d should_send_to_next_sibling=%d", args->chain_incarnation_id,
+      args->should_send_to_next_sibling);
 
     /* TODO: implement a limit to the total size of the entries being sent */
     rv = logAcquire(&r->log, next_index, &args->entries, &args->n_entries);
@@ -380,9 +384,8 @@ static int triggerChain(struct raft *r)
     /* Trigger replication for servers we didn't hear from recently. */
     for (i = 0; i < r->configuration.n; i++) {
         struct raft_server *server = &r->configuration.servers[i];
-        if (server->id != r->next_sibling_id) {
-            continue;
-        }
+        if (server->id == r->id)
+          continue;
         /* Skip spare servers, unless they're being promoted. */
         if (server->role == RAFT_SPARE &&
             server->id != r->leader_state.promotee_id) {
@@ -404,7 +407,7 @@ static void sendHeartbeatCb(struct raft_io_send *send, const int status)
 {
     struct sendHeartbeat *req = send->data;
     if (status != 0)
-      TracefL(ERROR, "Failed to send heartbeat to %d %s", req->server_id,
+      TracefL(DEBUG, "Failed to send heartbeat to %d %s", req->server_id,
         errCodeToString(status));
 
     raft_free(req);
@@ -799,7 +802,24 @@ int replicationUpdate(struct raft *r,
      *
      *   If successful update nextIndex and matchIndex for follower.
      */
+    TracefL(ERROR, "Received append entries with chain_incarnation_id=%d should_send_to_next_sibling=%d",
+      result->chain_incarnation_id, result->should_send_to_next_sibling);
+    if (result->should_send_to_next_sibling) {
+      // Via chain
+      if (r->chain_incarnation_id != result->chain_incarnation_id) {
+        TracefL(ERROR, "Here....");
+        return 0;
+      }
+    } else {
+      // Via multicast
+      if (r->should_send_to_next_sibling) {
+        TracefL(ERROR, "Here2....");
+        return 0;
+      }
+    }
+
     if (!progressMaybeUpdate(r, i, last_index)) {
+        TracefL(ERROR, "Here3....");
         return 0;
     }
 
@@ -836,6 +856,7 @@ int replicationUpdate(struct raft *r,
     rv = replicationApply(r);
     if (rv != 0) {
         /* TODO: just log the error? */
+        TracefL(ERROR, "Replication apply failed");
     }
 
     /* Abort here we have been removed and we are not leaders anymore. */
@@ -973,7 +994,6 @@ static void appendFollowerCb(struct raft_io_append *req, int status)
      */
     if (args->leader_commit > r->commit_index) {
         r->commit_index = min(args->leader_commit, r->last_stored);
-        tracef("appendFollowerCb replicationApply...\n");
         rv = replicationApply(r);
         if (rv != 0) {
             goto out;

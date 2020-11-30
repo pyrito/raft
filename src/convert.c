@@ -204,6 +204,8 @@ int convertToLeader(struct raft *r)
     }
 
     r->leader_state.change = NULL;
+    r->chain_incarnation_id = 0;
+    r->should_send_to_next_sibling = false;
 
     /* Reset promotion state. */
     r->leader_state.promotee_id = 0;

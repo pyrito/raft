@@ -32,8 +32,7 @@ static void initProgress(struct raft_progress *p, raft_index last_index, raft_ti
     // TODO - Leader failures are not handled properly with respect to chain replication.
     // Below is a hack for testing chain healing without leader failure.
     p->state = PROGRESS__PROBE;
-    p->next_sibling_id = id == num_nodes ? 1 : id + 1;
-    p->replenish_till_index = -1;
+    p->next_sibling_id = 0;
     p->node_alive_start = node_alive_start;
     p->recent_alive_recv = false;
 }
@@ -122,19 +121,9 @@ const char* progStateToStr(int state) {
             return "PROGRESS__PROBE";
         case PROGRESS__PIPELINE:
             return "PROGRESS__PIPELINE";
-        case PROGRESS__CHAIN_HOLE_REPLINISH:
-            return "PROGRESS__CHAIN_HOLE_REPLINISH";
-        case PROGRESS__DEAD:
-            return "PROGRESS__DEAD";
+        default:
+           return "INVALID_STATE";
     }
-}
-
-bool existsVictimNode(struct raft *r) {
-  for (int i = 0; i < r->configuration.n; i++) {
-    if (r->leader_state.progress[i].state == PROGRESS__CHAIN_HOLE_REPLINISH)
-      return true;
-  }
-  return false;
 }
 
 bool progressShouldReplicate(struct raft *r, unsigned i)
@@ -145,28 +134,10 @@ bool progressShouldReplicate(struct raft *r, unsigned i)
     raft_index last_index = logLastIndex(&r->log);
     bool result = false;
 
-    if (existsVictimNode(r)) {
-      // We are in a sort of "paused" state i.e., healing the chain. So, we only consider the nodes which are to be replenished.
-      if (r->leader_state.progress[i].state != PROGRESS__CHAIN_HOLE_REPLINISH) {
-        // The node is not being replenished.
-        tracef("Should replicate for arr_idx %d state=%s? False, in paused state",
-          i, progStateToStr(p->state));
-        return false;
-      } else {
-        // In case the node is in PROGRESS__CHAIN_HOLE_REPLINISH state, check if it is not yet fully replenished.
-        if (r->leader_state.progress[i].replenish_till_index <= (r->leader_state.progress[i].next_index - 1)) {
-          // We have replinished this node. Reset the state to pipeline.
-          tracef("Should replicate for arr_idx %d state=%s? False, already replenished, replenish till index is %d",
-            i, progStateToStr(p->state), r->leader_state.progress[i].replenish_till_index);
-          r->leader_state.progress[i].replenish_till_index = -1;
-          r->leader_state.progress[i].state = PROGRESS__PROBE;
-          return false;
-        }
-      }
-    } else {
-      // In non "paused" state, we only care about the next sibling.
+    if (r->next_sibling_id != 0 && p->next_sibling_id != 0) {
+      // Node in chain replication list.
       if (r->configuration.servers[i].id != r->next_sibling_id) {
-        tracef("Should replicate for arr_idx %d state=%s? False, not in paused state and not the next siblint",
+        TracefL(DEBUG, "Should replicate for arr_idx %d state=%s? False, since node is in chain but not the next sibling",
           i, progStateToStr(p->state));
         return false;
       }
@@ -174,7 +145,7 @@ bool progressShouldReplicate(struct raft *r, unsigned i)
 
     /* We must be in a valid state. */
     assert(p->state == PROGRESS__PROBE || p->state == PROGRESS__PIPELINE ||
-           p->state == PROGRESS__SNAPSHOT || p->state == PROGRESS__CHAIN_HOLE_REPLINISH);
+           p->state == PROGRESS__SNAPSHOT);
 
     /* The next index to send must be lower than the highest index in our
      * log. */
@@ -197,13 +168,8 @@ bool progressShouldReplicate(struct raft *r, unsigned i)
              * haven't sent anything in the last heartbeat interval. */
             result = !progressIsUpToDate(r, i);
             break;
-        case PROGRESS__CHAIN_HOLE_REPLINISH:
-            // TODO: Optimize later to send only as many entries as required and not more.
-            result = !progressIsUpToDate(r, i);
-            break;
-
     }
-    TracefL(INFO, "Should replicate for arr_idx %d state=%s? last_local_idx=%d next_index=%d, has_append_entries_interval_passed=%d progressIsUpToDate=%d verdict=%d",
+    TracefL(DEBUG, "Should replicate for arr_idx %d state=%s? last_local_idx=%d next_index=%d, has_append_entries_interval_passed=%d progressIsUpToDate=%d verdict=%d",
       i, progStateToStr(p->state), last_index, p->next_index, has_append_entries_interval_passed, progressIsUpToDate(r, i), result);
     return result;
 }

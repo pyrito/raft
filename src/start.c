@@ -187,8 +187,7 @@ int raft_start(struct raft *r)
         return rv;
     }
 
-    r->next_sibling_id = (r->id + 1) > r->configuration.n ? 1 : r->id + 1;
-    tracef("next_sibling_id=%d", r->next_sibling_id);
+    r->next_sibling_id = 0;
     /* Start the I/O backend. The tickCb function is expected to fire every
      * r->heartbeat_timeout milliseconds and recvCb whenever an RPC is
      * received. */

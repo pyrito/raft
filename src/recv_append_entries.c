@@ -127,6 +127,8 @@ int recvAppendEntries(struct raft *r,
 
 reply:
     result->term = r->current_term;
+    result->should_send_to_next_sibling = args->should_send_to_next_sibling;
+    result->chain_incarnation_id = args->chain_incarnation_id;
 
     /* Free the entries batch, if any. */
     if (args->n_entries > 0 && args->entries[0].batch != NULL) {

@@ -1,13 +1,13 @@
 /* Receive a Heartbeat message. */
 
-#ifndef RECV_HEARTBEAT_H__
-#define RECV_HEARTBEAT_H__
+#ifndef RECV_RELINK_H__
+#define RECV_RELINK_H__
 
 #include "../include/raft.h"
 
-int recvHeartbeat(struct raft *r,
-                  raft_id id,
-                  const char *address,
-                  const struct raft_heartbeat *args);
+int recvRelink(struct raft *r,
+               raft_id id,
+               const char *address,
+               const struct raft_relink *args);
 
-#endif /* RECV_HEARTBEAT_H__ */
+#endif /* RECV_RELINK_H__ */
