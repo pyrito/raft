@@ -38,7 +38,7 @@ int raft_apply(struct raft *r,
 
     /* Index of the first entry being appended. */
     index = logLastIndex(&r->log) + 1;
-    tracef("%u commands starting at %lld", n, index);
+    TracefL(INFO, "%u commands starting at %lld", n, index);
     req->type = RAFT_COMMAND;
     req->index = index;
     req->cb = cb;

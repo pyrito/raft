@@ -53,7 +53,7 @@ static void sendAppendEntriesCb(struct raft_io_send *send, const int status)
 
     if (r->state == RAFT_LEADER && i < r->configuration.n) {
         if (status != 0) {
-            tracef("failed to send append entries to server %u: %s",
+            TracefL(DEBUG, "failed to send append entries to server %u: %s",
                    req->server_id, raft_strerror(status));
             /* Go back to probe mode. */
             progressToProbe(r, i);
@@ -111,7 +111,7 @@ static int sendAppendEntries(struct raft *r,
      */
     args->leader_commit = r->commit_index;
 
-    tracef("send %u entries starting at %llu + 1 to server %u (last log index on leader is %llu)",
+    TracefL(DEBUG, "send %u entries starting at %llu + 1 to server %u (last log index on leader is %llu)",
            args->n_entries, args->prev_log_index, server->id,
            logLastIndex(&r->log));
 
@@ -467,7 +467,7 @@ static void appendLeaderCb(struct raft_io_append *req, int status)
     size_t server_index;
     int rv;
 
-    tracef("leader: written %u entries starting at %lld: status %d", request->n,
+    TracefL(INFO, "leader: written %u entries starting at %lld: status %d", request->n,
            request->index, status);
 
     /* In case of a failed disk write, if we were the leader creating these
@@ -829,7 +829,7 @@ static void appendFollowerCb(struct raft_io_append *req, int status)
     size_t j;
     int rv;
 
-    tracef("I/O completed on follower: status %d", status);
+    TracefL(INFO, "I/O completed on follower: status %d", status);
 
     assert(args->entries != NULL);
     assert(args->n_entries > 0);
@@ -1539,7 +1539,7 @@ void replicationQuorum(struct raft *r, const raft_index index)
 
     if (votes > configurationVoterCount(&r->configuration) / 2) {
         r->commit_index = index;
-        tracef("new commit index %llu", r->commit_index);
+        TracefL(INFO, "new commit index %llu", r->commit_index);
     }
 
     return;

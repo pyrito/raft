@@ -240,7 +240,7 @@ static void uvClientSendPending(struct uvClient *c)
 {
     int rv;
     assert(c->stream != NULL);
-    tracef("send pending messages");
+    TracefL(INFO, "send pending messages");
     while (!QUEUE_IS_EMPTY(&c->pending)) {
         queue *head;
         struct uvSend *send;
