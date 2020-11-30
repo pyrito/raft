@@ -304,7 +304,7 @@ static void serverTimerCb(uv_timer_t *timer)
     gettimeofday(&temp, NULL);
     if (test_duration_secs < (temp.tv_sec - start.tv_sec)) {
       struct Fsm *f = s->fsm.data;
-      fprintf(stderr, "Ops/sec = %f",
+      fprintf(stderr, "Ops/sec = %f\n",
         ((float) (f->count))/(temp.tv_sec - start.tv_sec));
        exit(0);    
     }

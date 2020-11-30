@@ -46,7 +46,7 @@ static int tickFollower(struct raft *r)
      *   current leader or granting vote to candidate, convert to candidate.
      */
     if (electionTimerExpired(r) && server->role == RAFT_VOTER) {
-        tracef("convert to candidate and start new election");
+        TracefL(INFO, "convert to candidate and start new election");
         rv = convertToCandidate(r, false /* disrupt leader */);
         if (rv != 0) {
             tracef("convert to candidate: %s", raft_strerror(rv));

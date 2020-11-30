@@ -38,7 +38,7 @@ int recvRequestVoteResult(struct raft *r,
 
     /* Ignore responses if we are not candidate anymore */
     if (r->state != RAFT_CANDIDATE) {
-        tracef("local server is not candidate -> ignore");
+        TracefL(INFO, "local server is not candidate -> ignore");
         return 0;
     }
 
@@ -59,7 +59,7 @@ int recvRequestVoteResult(struct raft *r,
         /* If the term in the result is older than ours, this is an old message
          * we should ignore, because the node who voted for us would have
          * obtained our term.  This happens if the network is pretty choppy. */
-        tracef("local term is higher -> ignore");
+        TracefL(INFO, "local term is higher -> ignore");
         return 0;
     }
 
@@ -102,14 +102,14 @@ int recvRequestVoteResult(struct raft *r,
     if (result->vote_granted) {
         if (electionTally(r, votes_index)) {
             if (r->candidate_state.in_pre_vote) {
-                tracef("votes quorum reached -> pre-vote successful");
+                TracefL(INFO, "votes quorum reached -> pre-vote successful");
                 r->candidate_state.in_pre_vote = false;
                 rv = electionStart(r);
                 if (rv != 0) {
                     return rv;
                 }
             } else {
-                tracef("votes quorum reached -> convert to leader");
+                TracefL(INFO, "votes quorum reached -> convert to leader");
                 rv = convertToLeader(r);
                 if (rv != 0) {
                     return rv;

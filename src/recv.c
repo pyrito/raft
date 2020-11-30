@@ -124,7 +124,7 @@ int recvBumpCurrentTerm(struct raft *r, raft_term term)
     if (r->state != RAFT_FOLLOWER) {
         strcat(msg, " and step down");
     }
-    tracef("%s", msg);
+    TracefL(INFO, "%s", msg);
 
     /* Save the new term to persistent store, resetting the vote. */
     rv = r->io->set_term(r->io, term);
