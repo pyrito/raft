@@ -187,6 +187,7 @@ raft_index progressMatchIndex(struct raft *r, unsigned i)
 void progressUpdateLastSend(struct raft *r, unsigned i)
 {
     r->leader_state.progress[i].last_append_entries_send = r->io->time(r->io);
+    TracefL(DEBUG, "In progressUpdateLastSend for node index %d last_append_entries_send %llu", i, r->leader_state.progress[i].last_append_entries_send);
 }
 
 bool progressResetRecentRecv(struct raft *r, const unsigned i)

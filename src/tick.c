@@ -213,6 +213,10 @@ int compChainNode(const void *elem1, const void *elem2)
   return ((chainNode*)elem1)->next_index >= ((chainNode*)elem2)->next_index;
 }
 
+int abs(raft_index index_a, raft_index index_b) {
+  return index_a > index_b ? index_a - index_b : index_b - index_a;
+}
+
 bool moreHealthyChainExists(struct raft *r) {
    int current_chain_len = 0;
    if (r->should_send_to_next_sibling) {
@@ -226,10 +230,29 @@ bool moreHealthyChainExists(struct raft *r) {
    }
 
    int cnt_alive_nodes_including_leader = 1;
+   //for (int i = 0; i < r->configuration.n; i++) {
+   //  struct raft_progress *progress = &(r->leader_state.progress[i]);
+   //  if(r->configuration.servers[i].id != r->id && !progress->dead)
+   //    cnt_alive_nodes_including_leader++; 
+   //}
+
+   bool all_nodes_are_close = false;
    for (int i = 0; i < r->configuration.n; i++) {
      struct raft_progress *progress = &(r->leader_state.progress[i]);
-     if(r->configuration.servers[i].id != r->id && !progress->dead)
-       cnt_alive_nodes_including_leader++; 
+     if (r->configuration.servers[i].id == r->id || progress->dead) {
+       continue;
+     }
+     cnt_alive_nodes_including_leader++; 
+     for (int j = 0; j < r->configuration.n; j++) {
+       struct raft_progress *progress_2 = &(r->leader_state.progress[j]);
+       if ((r->configuration.servers[j].id == r->configuration.servers[i].id) || progress_2->dead) {
+         continue;
+       }
+       if (abs(progress_2->next_index, progress->next_index) > 1) {
+         TracefL(DEBUG, "Chain modification: Absolute difference in index values is %d", abs(progress_2->next_index, progress->next_index));
+         return false;
+       }
+     }
    }
 
    if (cnt_alive_nodes_including_leader > current_chain_len && cnt_alive_nodes_including_leader >= 3) {
@@ -452,6 +475,7 @@ static int tick(struct raft *r)
 {
     int rv = -1;
 
+    TracefL(DEBUG, "Ticking....");
     assert(r->state == RAFT_UNAVAILABLE || r->state == RAFT_FOLLOWER ||
            r->state == RAFT_CANDIDATE || r->state == RAFT_LEADER);
 

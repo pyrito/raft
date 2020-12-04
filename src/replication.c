@@ -61,6 +61,7 @@ static void sendAppendEntriesCb(struct raft_io_send *send, const int status)
     struct raft *r = req->raft;
     unsigned i = configurationIndexOf(&r->configuration, req->server_id);
 
+    TracefL(DEBUG, "In sendAppendEntriesCb for node index %d", i);
     if (r->state == RAFT_LEADER && i < r->configuration.n) {
         if (status != 0) {
             TracefL(DEBUG, "failed to send append entries to server %u: %s",
@@ -774,20 +775,23 @@ int replicationUpdate(struct raft *r,
      *
      *   If successful update nextIndex and matchIndex for follower.
      */
-    TracefL(DEBUG, "Received append entries result with term=%llu, rejected=%llu, last_log_index=%llu, chain_incarnation_id=%llu should_send_to_next_sibling=%llu",
+    TracefL(DEBUG, "Received append entries result with term=%llu, rejected=%llu, last_log_index=%llu, chain_incarnation_id=%llu should_send_to_next_sibling=%llu r->should_send_to_next_sibling=%llu r->chain_incarnation_id=%llu",
       result->term,
       result->rejected,
       result->last_log_index,
-      result->chain_incarnation_id, result->should_send_to_next_sibling);
+      result->chain_incarnation_id, result->should_send_to_next_sibling,
+      r->should_send_to_next_sibling,
+      r->chain_incarnation_id);
 
-    if (result->should_send_to_next_sibling) {
+    if (result->should_send_to_next_sibling && r->should_send_to_next_sibling) {
       // Via chain
-      if (r->chain_incarnation_id != result->chain_incarnation_id)
+      if (r->chain_incarnation_id != result->chain_incarnation_id) {
         return 0;
+      }
+    } else if (!result->should_send_to_next_sibling && !r->should_send_to_next_sibling) {
+      // Do nothing
     } else {
-      // Via multicast
-      if (r->should_send_to_next_sibling)
-        return 0;
+      return 0;
     }
 
     /* If the RPC failed because of a log mismatch, retry.
