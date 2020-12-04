@@ -41,8 +41,14 @@ int recvAppendEntries(struct raft *r,
     result->rejected = args->prev_log_index;
     result->last_log_index = logLastIndex(&r->log);
 
+    TracefL(DEBUG, "Receiving append entries with prev_log_term=%llu, prev_log_index=%llu n_entries=%llu",
+      args->prev_log_term,
+      args->prev_log_index,
+      args->n_entries);
+
     rv = recvEnsureMatchingTerms(r, args->term, &match);
     if (rv != 0) {
+        TracefL(ERROR, "terms don't match");
         return rv;
     }
 
@@ -52,7 +58,7 @@ int recvAppendEntries(struct raft *r,
      *   currentTerm.
      */
     if (match < 0) {
-        tracef("local term is higher -> reject ");
+        TracefL(ERROR, "local term is higher -> reject ");
         goto reply;
     }
 
@@ -103,6 +109,7 @@ int recvAppendEntries(struct raft *r,
     struct raft_server *leader = configurationGet(&r->configuration, args->leader_id);
     rv = recvUpdateLeader(r, args->leader_id, leader->address);
     if (rv != 0) {
+        TracefL(ERROR, "failed in recvUpdateLeader");
         return rv;
     }
 
@@ -110,6 +117,7 @@ int recvAppendEntries(struct raft *r,
      * something smarter, e.g. buffering the entries in the I/O backend, which
      * should be in charge of serializing everything. */
     if (r->snapshot.put.data != NULL && args->n_entries > 0) {
+        TracefL(ERROR, "TODO: Check this error");
         return 0;
     }
 

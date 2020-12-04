@@ -198,6 +198,12 @@ static void uvFireRecvCb(struct uvServer *s)
       TracefL(DEBUG, "Receiving message %s from %s",
         message_type_str(s->message.type), s->message.server_address);
 
+    if (s->message.type == RAFT_IO_APPEND_ENTRIES) {
+      TracefL(DEBUG, "In uvFireRecvCb receiving append entries with prev_log_term=%llu, prev_log_index=%llu n_entries=%llu",
+        s->message.append_entries.prev_log_term,
+        s->message.append_entries.prev_log_index,
+        s->message.append_entries.n_entries);
+    }
     s->uv->recv_cb(s->uv->io, &s->message);
     /* Reset our state as we'll start reading a new message. We don't need to
      * release the payload buffer, since ownership was transfered to the

@@ -7,6 +7,7 @@
 #include "progress.h"
 #include "replication.h"
 #include "tracing.h"
+#include "chain_ops.h"
 
 /* Set to 1 to enable tracing. */
 #if 1

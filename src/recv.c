@@ -91,6 +91,7 @@ static int recvMessage(struct raft *r, struct raft_message *message)
                                    message->server_address,
                                    &message->append_entries);
             if (rv != 0) {
+                TracefL(ERROR, "recvAppendEntries failed!!!");
                 entryBatchesDestroy(message->append_entries.entries,
                                     message->append_entries.n_entries);
             }

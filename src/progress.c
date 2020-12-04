@@ -269,7 +269,7 @@ bool progressMaybeDecrement(struct raft *r,
     /* The rejection must be stale or spurious if the rejected index does not
      * match the next index minus one. */
     if (rejected != p->next_index - 1) {
-        tracef("rejected index %llu different from next index %lld -> ignore ",
+        tracef("rejected index %llu different from next index %lld -1 -> ignore ",
                rejected, p->next_index);
         return false;
     }

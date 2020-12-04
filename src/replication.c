@@ -3,6 +3,7 @@
 #include "assert.h"
 #include "configuration.h"
 #include "convert.h"
+#include "chain_ops.h"
 #ifdef __GLIBC__
 #include "error.h"
 #endif
@@ -765,35 +766,6 @@ int replicationUpdate(struct raft *r,
     progressMarkRecentRecv(r, i);
     progressMarkRecentAliveRecv(r, i);
 
-    /* If the RPC failed because of a log mismatch, retry.
-     *
-     * From Figure 3.1:
-     *
-     *   [Rules for servers] Leaders:
-     *
-     *   - If AppendEntries fails because of log inconsistency:
-     *     decrement nextIndex and retry.
-     */
-    if (result->rejected > 0) {
-        bool retry;
-        retry = progressMaybeDecrement(r, i, result->rejected,
-                                       result->last_log_index);
-        if (retry) {
-            /* Retry, ignoring errors. */
-            tracef("log mismatch -> send old entries to %u", server->id);
-            replicationProgress(r, i);
-        }
-        return 0;
-    }
-
-    /* In case of success the remote server is expected to send us back the
-     * value of prevLogIndex + len(entriesToAppend). If it has a longer log, it
-     * might be a leftover from previous terms. */
-    last_index = result->last_log_index;
-    if (last_index > logLastIndex(&r->log)) {
-        last_index = logLastIndex(&r->log);
-    }
-
     /* If the RPC succeeded, update our counters for this server.
      *
      * From Figure 3.1:
@@ -817,6 +789,44 @@ int replicationUpdate(struct raft *r,
       if (r->should_send_to_next_sibling)
         return 0;
     }
+
+    /* If the RPC failed because of a log mismatch, retry.
+     *
+     * From Figure 3.1:
+     *
+     *   [Rules for servers] Leaders:
+     *
+     *   - If AppendEntries fails because of log inconsistency:
+     *     decrement nextIndex and retry.
+     */
+    if (result->rejected > 0) {
+        bool retry;
+        retry = progressMaybeDecrement(r, i, result->rejected,
+                                       result->last_log_index);
+        if (r->should_send_to_next_sibling && r->leader_state.progress[i].next_sibling_id != 0) {
+          // This node was part of a chain and has fallen out of sync (which is clear because we have a rejection).
+          // Switch to pure multicast to heal.
+          switchToPureMulticast(r);
+          return 0;
+        }
+
+        if (retry) {
+            /* Retry, ignoring errors. */
+            tracef("log mismatch -> send old entries to %u", server->id);
+            replicationProgress(r, i);
+        }
+
+        return 0;
+    }
+
+    /* In case of success the remote server is expected to send us back the
+     * value of prevLogIndex + len(entriesToAppend). If it has a longer log, it
+     * might be a leftover from previous terms. */
+    last_index = result->last_log_index;
+    if (last_index > logLastIndex(&r->log)) {
+        last_index = logLastIndex(&r->log);
+    }
+
 
     if (!progressMaybeUpdate(r, i, last_index))
         return 0;
@@ -1169,6 +1179,7 @@ int replicationAppend(struct raft *r,
     /* Delete conflicting entries. */
     rv = deleteConflictingEntries(r, args, &i);
     if (rv != 0) {
+        TracefL(ERROR, "failed in deleteConflictingEntries");
         return rv;
     }
 
@@ -1190,6 +1201,7 @@ int replicationAppend(struct raft *r,
             r->commit_index = min(args->leader_commit, logLastIndex(&r->log));
             rv = replicationApply(r);
             if (rv != 0) {
+                TracefL(ERROR, "failed in replicationApply");
                 return rv;
             }
         }
@@ -1201,6 +1213,7 @@ int replicationAppend(struct raft *r,
 
     request = raft_malloc(sizeof *request);
     if (request == NULL) {
+        TracefL(ERROR, "Out of memory!!!");
         rv = RAFT_NOMEM;
         goto err;
     }
@@ -1215,6 +1228,8 @@ int replicationAppend(struct raft *r,
     for (j = 0; j < n; j++) {
         struct raft_entry *entry = &args->entries[i + j];
 
+        TracefL(DEBUG, "In replicationAppend going to append entry with index %llu",
+          i+j+args->prev_log_index+1);
         rv = logAppend(&r->log, entry->term, entry->type, &entry->buf,
                        entry->batch);
         if (rv != 0) {
