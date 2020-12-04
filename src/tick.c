@@ -182,14 +182,14 @@ static int sendRelink(struct raft *r, raft_id id, raft_id next_sibling_id) {
 }
 
 void switchToPureMulticast(struct raft *r) {
-   TracefL(INFO, "Chain modification: switchToPureMulticast");
+   TracefL(ERROR, "Chain modification: switchToPureMulticast");
    r->next_sibling_id = 0;
    r->should_send_to_next_sibling = 0;
    for (int i = 0; i < r->configuration.n; i++) {
      struct raft_progress *progress = &(r->leader_state.progress[i]);
      progress->next_sibling_id = 0;
    }
-   TracefL(INFO, "Chain modification: Finished switching to pure multicast");
+   TracefL(ERROR, "Chain modification: Finished switching to pure multicast");
 }
 
 void handleDeadNode(struct raft *r, int i) {
@@ -232,10 +232,9 @@ bool moreHealthyChainExists(struct raft *r) {
    }
 
    if (cnt_alive_nodes_including_leader > current_chain_len && cnt_alive_nodes_including_leader >= 3) {
-     TracefL(INFO, "Chain modification: moreHealthyChainExists cnt_alive_nodes_including_leader=%d current_chain_len=%d", cnt_alive_nodes_including_leader, current_chain_len);
+     TracefL(ERROR, "Chain modification: moreHealthyChainExists cnt_alive_nodes_including_leader=%d current_chain_len=%d", cnt_alive_nodes_including_leader, current_chain_len);
      return true;
    }
-   // TracefL(DEBUG, "Chain modification: moreHealthyChainExists cnt_alive_nodes_including_leader=%d current_chain_len=%d", cnt_alive_nodes_including_leader, current_chain_len);
    return false;
 }
 
@@ -287,7 +286,7 @@ void reformChain(struct raft *r) {
      strcat(node_ids_str, str);
    }
 
-   TracefL(INFO, "Chain modification: Reforming chain with alive nodes %s", node_ids_str);
+   TracefL(ERROR, "Chain modification: Reforming chain with alive nodes %s", node_ids_str);
 
    // Send relink messages
    for (int i=0; i<cnt_alive_nodes_excluding_leader-1; i++) {
@@ -322,7 +321,7 @@ void reformChain(struct raft *r) {
       progress->next_index = nodes[i].next_index;
    }
 
-   TracefL(INFO, "Chain modification: New chain incarnation id %d with nodes: %s\n", r->chain_incarnation_id, node_ids_str);
+   TracefL(ERROR, "Chain modification: New chain incarnation id %d with nodes: %s\n", r->chain_incarnation_id, node_ids_str);
    // TODO - Change update of next_index in recvAppendEntriesResult path. Check both
    // optimistic and non-optimistic cases.
 
