@@ -802,26 +802,24 @@ int replicationUpdate(struct raft *r,
      *
      *   If successful update nextIndex and matchIndex for follower.
      */
-    TracefL(ERROR, "Received append entries with chain_incarnation_id=%d should_send_to_next_sibling=%d",
+    TracefL(DEBUG, "Received append entries result with term=%llu, rejected=%llu, last_log_index=%llu, chain_incarnation_id=%llu should_send_to_next_sibling=%llu",
+      result->term,
+      result->rejected,
+      result->last_log_index,
       result->chain_incarnation_id, result->should_send_to_next_sibling);
+
     if (result->should_send_to_next_sibling) {
       // Via chain
-      if (r->chain_incarnation_id != result->chain_incarnation_id) {
-        TracefL(ERROR, "Here....");
+      if (r->chain_incarnation_id != result->chain_incarnation_id)
         return 0;
-      }
     } else {
       // Via multicast
-      if (r->should_send_to_next_sibling) {
-        TracefL(ERROR, "Here2....");
+      if (r->should_send_to_next_sibling)
         return 0;
-      }
     }
 
-    if (!progressMaybeUpdate(r, i, last_index)) {
-        TracefL(ERROR, "Here3....");
+    if (!progressMaybeUpdate(r, i, last_index))
         return 0;
-    }
 
     switch (progressState(r, i)) {
         case PROGRESS__SNAPSHOT:
@@ -908,7 +906,7 @@ static void sendAppendEntriesResult(
     message.server_id = r->follower_state.current_leader.id;
     message.server_address = r->follower_state.current_leader.address;
     message.append_entries_result = *result;
-
+    
     req = raft_malloc(sizeof *req);
     if (req == NULL) {
         return;
@@ -944,7 +942,9 @@ static void appendFollowerCb(struct raft_io_append *req, int status)
 
     assert(args->entries != NULL);
     assert(args->n_entries > 0);
-
+    
+    result.chain_incarnation_id = args->chain_incarnation_id;
+    result.should_send_to_next_sibling = args->should_send_to_next_sibling;
     result.term = r->current_term;
     if (status != 0) {
         if (r->state != RAFT_FOLLOWER) {

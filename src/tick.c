@@ -184,7 +184,7 @@ static int sendRelink(struct raft *r, raft_id id, raft_id next_sibling_id) {
 void switchToPureMulticast(struct raft *r) {
    TracefL(INFO, "Chain modification: switchToPureMulticast");
    r->next_sibling_id = 0;
-   r->should_send_to_next_sibling = false;
+   r->should_send_to_next_sibling = 0;
    for (int i = 0; i < r->configuration.n; i++) {
      struct raft_progress *progress = &(r->leader_state.progress[i]);
      progress->next_sibling_id = 0;
@@ -313,7 +313,7 @@ void reformChain(struct raft *r) {
 
    r->next_sibling_id = nodes[0].id;
 
-   r->should_send_to_next_sibling = true;
+   r->should_send_to_next_sibling = 1;
 
    // Reset next_indices to what we saw when we sorted
    for (int i = 0; i <cnt_alive_nodes_excluding_leader; i++) {

@@ -36,14 +36,13 @@ static size_t sizeofRequestVoteResult(void)
 static size_t sizeofAppendEntries(const struct raft_append_entries *p)
 {
     return sizeof(uint64_t) + /* Leader's term. */
-           sizeof(uint64_t) + /* Leader ID */
            sizeof(uint64_t) + /* Previous log entry index */
            sizeof(uint64_t) + /* Previous log entry term */
            sizeof(uint64_t) + /* Leader's commit index */
            sizeof(uint64_t) + /* Number of entries in the batch */
            sizeof(uint64_t) + /* Leader's id */
-           sizeof(int) + /* Version number of chain */
-           sizeof(bool) + /* Whether we chain or not */
+           sizeof(uint64_t) + /* Version number of chain */
+           sizeof(uint64_t) + /* Whether we chain or not */
            16 * p->n_entries /* One header per entry */;
 }
 
@@ -52,8 +51,8 @@ static size_t sizeofAppendEntriesResult(void)
     return sizeof(uint64_t) + /* Term. */
            sizeof(uint64_t) + /* Success. */
            sizeof(uint64_t) + /* Last log index. */
-           sizeof(int) + /* Version number of chain */
-           sizeof(bool) /* Whether we chain or not */;
+           sizeof(uint64_t) + /* Version number of chain */
+           sizeof(uint64_t) /* Whether we chain or not */;
 }
 
 static size_t sizeofInstallSnapshot(const struct raft_install_snapshot *p)
@@ -137,9 +136,9 @@ static void encodeAppendEntries(const struct raft_append_entries *p, void *buf)
     bytePut64(&cursor, p->prev_log_term);  /* Previous term. */
     bytePut64(&cursor, p->leader_commit);  /* Leader commit. */
     bytePut64(&cursor, p->leader_id);  /* Leader id. */
-    bytePut32(&cursor, p->chain_incarnation_id); /* Version id */
-    bytePut8(&cursor, p->should_send_to_next_sibling); /* Should send to sibling */
-
+    bytePut64(&cursor, p->chain_incarnation_id); /* Version id */
+    bytePut64(&cursor, p->should_send_to_next_sibling); /* Should send to sibling */
+     
     uvEncodeBatchHeader(p->entries, p->n_entries, cursor);
 }
 
@@ -180,8 +179,8 @@ static void encodeAppendEntriesResult(
     bytePut64(&cursor, p->term);
     bytePut64(&cursor, p->rejected);
     bytePut64(&cursor, p->last_log_index);
-    bytePut32(&cursor, p->chain_incarnation_id);
-    bytePut8(&cursor, p->should_send_to_next_sibling);
+    bytePut64(&cursor, p->chain_incarnation_id);
+    bytePut64(&cursor, p->should_send_to_next_sibling);
 }
 
 static void encodeInstallSnapshot(const struct raft_install_snapshot *p,
@@ -464,8 +463,8 @@ static int decodeAppendEntries(const uv_buf_t *buf,
     args->prev_log_term = byteGet64(&cursor);
     args->leader_commit = byteGet64(&cursor);
     args->leader_id = byteGet64(&cursor);
-    args->chain_incarnation_id = byteGet32(&cursor);
-    args->should_send_to_next_sibling = byteGet8(&cursor);
+    args->chain_incarnation_id = byteGet64(&cursor);
+    args->should_send_to_next_sibling = byteGet64(&cursor);
 
     rv = uvDecodeBatchHeader(cursor, &args->entries, &args->n_entries);
     if (rv != 0) {
@@ -534,8 +533,8 @@ static void decodeAppendEntriesResult(const uv_buf_t *buf,
     p->term = byteGet64(&cursor);
     p->rejected = byteGet64(&cursor);
     p->last_log_index = byteGet64(&cursor);
-    p->chain_incarnation_id = byteGet32(&cursor);
-    p->should_send_to_next_sibling = byteGet8(&cursor);
+    p->chain_incarnation_id = byteGet64(&cursor);
+    p->should_send_to_next_sibling = byteGet64(&cursor);
 }
 
 static int decodeInstallSnapshot(const uv_buf_t *buf,

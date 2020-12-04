@@ -9,7 +9,7 @@
 #include "tracing.h"
 
 /* Set to 1 to enable tracing. */
-#if 0
+#if 1
 #define tracef(...) Tracef(__VA_ARGS__)
 #else
 #define tracef(...)
@@ -148,6 +148,12 @@ reply:
         return RAFT_NOMEM;
     }
     req->data = r;
+
+    TracefL(DEBUG, "Sending append entries result with term=%llu, rejected=%llu, last_log_index=%llu, chain_incarnation_id=%llu should_send_to_next_sibling=%llu",
+      result->term,
+      result->rejected,
+      result->last_log_index,
+      result->chain_incarnation_id, result->should_send_to_next_sibling);
 
     rv = r->io->send(r->io, req, &message, recvSendAppendEntriesResultCb);
     if (rv != 0) {

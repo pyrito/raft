@@ -275,8 +275,8 @@ struct raft_append_entries
     struct raft_entry *entries; /* Log entries to append. */
     unsigned n_entries;         /* Size of the log entries array. */
     raft_id leader_id;
-    int chain_incarnation_id;   /* -1 if multicast i.e., if below flag is false */
-    bool should_send_to_next_sibling; /* Flag to decide whether to chain or not */
+    raft_id chain_incarnation_id;   /* -1 if multicast i.e., if below flag is false */
+    raft_id should_send_to_next_sibling; /* Flag to decide whether to chain or not */
 };
 
 struct raft_heartbeat {
@@ -301,8 +301,8 @@ struct raft_append_entries_result
     raft_term term;            /* Receiver's current_term. */
     raft_index rejected;       /* If non-zero, the index that was rejected. */
     raft_index last_log_index; /* Receiver's last log entry index, as hint. */
-    int chain_incarnation_id;   /* -1 if multicast i.e., if below flag is false */
-    bool should_send_to_next_sibling;
+    raft_id chain_incarnation_id;   /* -1 if multicast i.e., if below flag is false */
+    raft_id should_send_to_next_sibling;
 };
 
 /**
@@ -739,8 +739,8 @@ struct raft
 
     // Sibling for chain replication
     raft_id next_sibling_id;
-    bool should_send_to_next_sibling;
-    int chain_incarnation_id;   /* Starts from 0 */
+    raft_id should_send_to_next_sibling;
+    raft_id chain_incarnation_id;   /* Starts from 0 */
 };
 
 RAFT_API int raft_init(struct raft *r,
