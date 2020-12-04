@@ -6,6 +6,12 @@
 #include "../include/raft.h"
 #include "time.h"
 
+enum {
+  DEBUG = 1,
+  INFO,
+  ERROR
+};
+
 /* Default no-op tracer. */
 extern struct raft_tracer NoopTracer;
 
@@ -18,6 +24,10 @@ struct timeval tv;
 #define Tracef(...)                                     \
     do {                                                \
     } while(0)
+#define TracefL(LEVEL, ...)                                     \
+    do {                                                \
+    } while(0)
+
 #else
 #define Tracef(...)                                     \
     do {                                                \
@@ -38,7 +48,7 @@ struct timeval tv;
         millisecondsSinceEpoch =                        \
           (unsigned long long)(tv.tv_sec) * 1000 +      \
             (unsigned long long)(tv.tv_usec) / 1000;    \
-        if (log_level >= LEVEL)                         \
+        if (log_level <= LEVEL)                         \
           fprintf(stderr, "%ld %s:%d: %s\n", millisecondsSinceEpoch, __FILE__, __LINE__, _msg);\
     } while (0)
 
