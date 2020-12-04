@@ -42,6 +42,7 @@
 #define RAFT_ERRMSG_BUF_SIZE 256
 
 extern int log_level;
+extern bool only_pure_multicast;
 /**
  * Return the error message describing the given error code.
  */

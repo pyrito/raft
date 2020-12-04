@@ -29,6 +29,7 @@ int test_duration_secs = 0;
 const char *dir;
 unsigned id;
 int log_level = 1;
+bool only_pure_multicast = false;
 
 struct Fsm
 {
@@ -403,7 +404,7 @@ static void mainSigintCb(struct uv_signal_s *handle, int signum)
 
 void parse_options(int argc, char **argv) {
   int opt = 0;
-  while ((opt = getopt(argc, argv, "c:t:r:d:x:y:l:")) != -1) {
+  while ((opt = getopt(argc, argv, "c:t:r:d:x:y:l:p")) != -1) {
     switch (opt) {
       case 'c':
         chunk_size_kb = atoi(optarg);
@@ -426,8 +427,11 @@ void parse_options(int argc, char **argv) {
       case 'l':
         log_level = atoi(optarg);
         break;
+      case 'p':
+        only_pure_multicast = true;
+        break;
       default: /* '?' */
-        fprintf(stderr, "Usage: %s [-c <chunk_size_kb> -t <inter_op_interval_ms> -r <gdb_print_record_cnt> -d <test_duration_secs> -x <dir> -y <id> -l <log_level 1,2,3>]\n",
+        fprintf(stderr, "Usage: %s [-c <chunk_size_kb> -t <inter_op_interval_ms> -r <gdb_print_record_cnt> -d <test_duration_secs> -x <dir> -y <id> -l <log_level 1,2,3> -p <only_pure_multicast>]\n",
              argv[0]);
         exit(EXIT_FAILURE);
       }
@@ -438,7 +442,7 @@ int main(int argc, char *argv[])
 {
     parse_options(argc, argv);
 
-    fprintf(stderr, "Test parameters: chunk_size_kb=%d inter_op_interval_ms=%d gdb_print_record_cnt=%d test_duration_secs=%d id=%d log_level=%d\n", chunk_size_kb, inter_op_interval_ms, gdb_print_record_cnt, test_duration_secs, id, log_level);
+    fprintf(stderr, "Test parameters: chunk_size_kb=%d inter_op_interval_ms=%d gdb_print_record_cnt=%d test_duration_secs=%d id=%d log_level=%d only_pure_multicast=%d\n", chunk_size_kb, inter_op_interval_ms, gdb_print_record_cnt, test_duration_secs, id, log_level, only_pure_multicast);
 
     struct uv_loop_s loop;
     struct uv_signal_s sigint; /* To catch SIGINT and exit. */

@@ -371,8 +371,8 @@ static int tickLeader(struct raft *r)
         }
     }
 
-    if (moreHealthyChainExists(r)) {
-      TracefL(INFO, "We found a healthier chain, switching to pure multicast");
+    if (!only_pure_multicast && moreHealthyChainExists(r)) {
+      TracefL(INFO, "We found a healthier chain, switching to pure multicast and then to new chain");
       switchToPureMulticast(r); 
       reformChain(r);
     }
