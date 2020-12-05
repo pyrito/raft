@@ -35,6 +35,7 @@ static void initProgress(struct raft_progress *p, raft_index last_index, raft_ti
     p->next_sibling_id = 0;
     p->node_alive_start = node_alive_start;
     p->recent_alive_recv = false;
+    p->one_probe_outstanding = false;
 }
 
 int progressBuildArray(struct raft *r)
@@ -100,6 +101,7 @@ int progressRebuildArray(struct raft *r,
         initProgress(&progress[i], last_index, now, r->configuration.servers[i].id, r->configuration.n);
     }
 
+    TracefL(ERROR, "Big error!!!!! Who did the reconfig?");
     raft_free(r->leader_state.progress);
     r->leader_state.progress = progress;
 
@@ -131,6 +133,8 @@ bool progressShouldReplicate(struct raft *r, unsigned i)
     struct raft_progress *p = &r->leader_state.progress[i];
     raft_time now = r->io->time(r->io);
     bool has_append_entries_interval_passed = now - p->last_append_entries_send >= r->heartbeat_timeout;
+    //TracefL(DEBUG, "has_append_entries_interval_passed = %d = %llu - %llu >= %llu", has_append_entries_interval_passed,
+    //  now, p->last_append_entries_send, r->heartbeat_timeout);
     raft_index last_index = logLastIndex(&r->log);
     bool result = false;
 
@@ -161,7 +165,10 @@ bool progressShouldReplicate(struct raft *r, unsigned i)
             break;
         case PROGRESS__PROBE:
             /* We send at most one message per heatbeat interval. */
-            result = !progressIsUpToDate(r, i) && has_append_entries_interval_passed;
+            // Option 2 -
+            result = !progressIsUpToDate(r, i) && !r->leader_state.progress[i].one_probe_outstanding;
+            // Option 1 -
+            //result = !progressIsUpToDate(r, i) && has_append_entries_interval_passed;
             break;
         case PROGRESS__PIPELINE:
             /* In replication mode we send empty append entries messages only if
@@ -318,6 +325,9 @@ void progressToProbe(struct raft *r, const unsigned i)
         p->next_index = p->match_index + 1;
     }
     p->state = PROGRESS__PROBE;
+    // Piyush TODO - What if a node disconnects and then re-connects.
+    // This flag should be reset to false in that case.
+    r->leader_state.progress[i].one_probe_outstanding = false;
 }
 
 void progressToPipeline(struct raft *r, const unsigned i)

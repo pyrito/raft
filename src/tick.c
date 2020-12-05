@@ -204,13 +204,12 @@ void handleDeadNode(struct raft *r, int i) {
 
 typedef struct chainNode {
   raft_id id;
-  raft_index next_index;
+  raft_index match_index;
 } chainNode;
 
 int compChainNode(const void *elem1, const void *elem2) 
 {
-  
-  return ((chainNode*)elem1)->next_index >= ((chainNode*)elem2)->next_index;
+  return ((chainNode*)elem1)->match_index >= ((chainNode*)elem2)->match_index;
 }
 
 int abs(raft_index index_a, raft_index index_b) {
@@ -229,37 +228,46 @@ bool moreHealthyChainExists(struct raft *r) {
      }
    }
 
+   // Consider only the pipeline mode nodes
    int cnt_alive_nodes_including_leader = 1;
-   //for (int i = 0; i < r->configuration.n; i++) {
-   //  struct raft_progress *progress = &(r->leader_state.progress[i]);
-   //  if(r->configuration.servers[i].id != r->id && !progress->dead)
-   //    cnt_alive_nodes_including_leader++; 
-   //}
+   for (int i = 0; i < r->configuration.n; i++) {
+     struct raft_progress *progress = &(r->leader_state.progress[i]);
+     if(r->configuration.servers[i].id != r->id && !progress->dead && progress->state == PROGRESS__PIPELINE)
+       cnt_alive_nodes_including_leader++; 
+   }
 
+   // TracefL(DEBUG, "Chain modification: moreHealthyChainExists cnt_alive_nodes_including_leader=%d current_chain_len=%d. Check if valid...", cnt_alive_nodes_including_leader, current_chain_len);
+   if ((cnt_alive_nodes_including_leader <= current_chain_len) || (cnt_alive_nodes_including_leader < 3)) {
+     return false;
+   }
+
+   TracefL(DEBUG, "Chain modification: moreHealthyChainExists cnt_alive_nodes_including_leader=%d current_chain_len=%d. Check for closeness...", cnt_alive_nodes_including_leader, current_chain_len);
    bool all_nodes_are_close = false;
    for (int i = 0; i < r->configuration.n; i++) {
      struct raft_progress *progress = &(r->leader_state.progress[i]);
-     if (r->configuration.servers[i].id == r->id || progress->dead) {
+     TracefL(DEBUG, "Chain modification: i is %d match_index=%d", i, progress->match_index);
+     if (r->configuration.servers[i].id == r->id || progress->dead || progress->state != PROGRESS__PIPELINE) {
        continue;
      }
-     cnt_alive_nodes_including_leader++; 
      for (int j = 0; j < r->configuration.n; j++) {
+       if ((i == j) || (r->configuration.servers[j].id == r->id) || progress->state != PROGRESS__PIPELINE)
+         continue;
+
        struct raft_progress *progress_2 = &(r->leader_state.progress[j]);
-       if ((r->configuration.servers[j].id == r->configuration.servers[i].id) || progress_2->dead) {
+       if (progress_2->dead) {
          continue;
        }
-       if (abs(progress_2->next_index, progress->next_index) > 1) {
-         TracefL(DEBUG, "Chain modification: Absolute difference in index values is %d", abs(progress_2->next_index, progress->next_index));
+       if (abs(progress_2->match_index, progress->match_index) > 10) {
+         TracefL(DEBUG, "Chain modification: Absolute difference in index values is |%d-%d| %d. Won't reform", progress_2->match_index, progress->match_index, abs(progress_2->match_index, progress->match_index));
          return false;
        }
      }
    }
+   return true;
+}
 
-   if (cnt_alive_nodes_including_leader > current_chain_len && cnt_alive_nodes_including_leader >= 3) {
-     TracefL(ERROR, "Chain modification: moreHealthyChainExists cnt_alive_nodes_including_leader=%d current_chain_len=%d", cnt_alive_nodes_including_leader, current_chain_len);
-     return true;
-   }
-   return false;
+raft_index max(raft_index idx1, raft_index idx2) {
+  return idx1 < idx2 ? idx2 : idx1; 
 }
 
 void reformChain(struct raft *r) {
@@ -271,11 +279,10 @@ void reformChain(struct raft *r) {
 
     When sending sendAppendEntries, add a flag to indicate if the next_sibling is supposed to be used or not.
    */
-   // TODO - Don't always relink alive nodes. What if they have index entries far apart?
    int cnt_alive_nodes_excluding_leader = 0;
    for (int i = 0; i < r->configuration.n; i++) {
      struct raft_progress *progress = &(r->leader_state.progress[i]);
-     if (!progress->dead && r->configuration.servers[i].id != r->id)
+     if (!progress->dead && r->configuration.servers[i].id != r->id && progress->state == PROGRESS__PIPELINE)
        cnt_alive_nodes_excluding_leader++; 
    }
 
@@ -287,9 +294,9 @@ void reformChain(struct raft *r) {
    int crwl = 0;
    for (int i = 0; i < r->configuration.n; i++) {
       struct raft_progress *progress = &(r->leader_state.progress[i]);
-      if (!progress->dead && r->configuration.servers[i].id != r->id) {
+      if (!progress->dead && r->configuration.servers[i].id != r->id && progress->state == PROGRESS__PIPELINE) {
          nodes[crwl].id = r->configuration.servers[i].id;
-         nodes[crwl].next_index = r->leader_state.progress[i].next_index;
+         nodes[crwl].match_index = r->leader_state.progress[i].match_index;
          crwl++;
       }
    }
@@ -338,17 +345,14 @@ void reformChain(struct raft *r) {
 
    r->should_send_to_next_sibling = 1;
 
-   // Reset next_indices to what we saw when we sorted
+   // Reset next_indices to match_indices which we saw when we sorted
    for (int i = 0; i <cnt_alive_nodes_excluding_leader; i++) {
       int node_idx = configurationIndexOf(&r->configuration, nodes[i].id);
       struct raft_progress *progress = &(r->leader_state.progress[node_idx]);
-      progress->next_index = nodes[i].next_index;
+      progress->next_index = max(nodes[i].match_index, 1);
    }
 
    TracefL(ERROR, "Chain modification: New chain incarnation id %d with nodes: %s\n", r->chain_incarnation_id, node_ids_str);
-   // TODO - Change update of next_index in recvAppendEntriesResult path. Check both
-   // optimistic and non-optimistic cases.
-
 }
 
 /* Apply time-dependent rules for leaders (Figure 3.1). */
@@ -394,7 +398,9 @@ static int tickLeader(struct raft *r)
         }
     }
 
-    if (!only_pure_multicast && moreHealthyChainExists(r)) {
+    // Piyush TODO - also handle stragglers in chain
+    TracefL(DEBUG, "Trying to find a healthier chain....");
+    if ((!only_pure_multicast) && moreHealthyChainExists(r)) {
       TracefL(INFO, "We found a healthier chain, switching to pure multicast and then to new chain");
       switchToPureMulticast(r); 
       reformChain(r);
@@ -416,7 +422,8 @@ static int tickLeader(struct raft *r)
      *   Send empty AppendEntries RPC during idle periods to prevent election
      *   timeouts.
      */
-    replicationHeartbeat(r);
+    // Piyush TODO - Handle issue of quiescence
+    // replicationHeartbeat(r);
     replicationAppendEntries(r);
 
     /* If a server is being promoted, increment the timer of the current
@@ -475,7 +482,7 @@ static int tick(struct raft *r)
 {
     int rv = -1;
 
-    TracefL(DEBUG, "Ticking....");
+    // TracefL(DEBUG, "Ticking....");
     assert(r->state == RAFT_UNAVAILABLE || r->state == RAFT_FOLLOWER ||
            r->state == RAFT_CANDIDATE || r->state == RAFT_LEADER);
 

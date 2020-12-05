@@ -5,9 +5,18 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <stdarg.h>
+#include <math.h>
 
 #include "../include/raft.h"
 #include "../include/raft/uv.h"
+#include "../src/tracing.h"
+
+/* Set to 1 to enable tracing. */
+#if 1
+#define tracef(...) Tracef(__VA_ARGS__)
+#else
+#define tracef(...)
+#endif
 
 #define N_SERVERS 3    /* Number of servers in the example cluster */
 #define APPLY_RATE 125 /* Apply a new entry every 125 milliseconds */
@@ -30,31 +39,62 @@ const char *dir;
 unsigned id;
 int log_level = 1;
 bool only_pure_multicast = false;
+double alpha = 0.3;
 
 struct Fsm
 {
     unsigned long long count;
+    double ewma;
+    double ewma_latency;
 };
 
-struct timeval stop, start, stop_iter, start_iter;
+struct timeval stop, start, stop_iter, start_iter, apply_start;
+
+uint64_t gdb_print_record_cnt_latency_sum_ms;
 
 static int FsmApply(struct raft_fsm *fsm,
                     const struct raft_buffer *buf,
                     void **result)
 {
     struct Fsm *f = fsm->data;
-    if ((buf->len != chunk_size_kb * 1024) || (
-           strcmp(buf->base, "hi there") != 0)) {
+//    if ((buf->len != chunk_size_kb * 1024) || (strcmp(buf->base, "hi there") != 0)) {
+    if ((buf->len != chunk_size_kb *1024)) {    
         fprintf(stderr, "Failing... %s %d\n",
             buf->base, strcmp(buf->base, "hi there"));
         return RAFT_MALFORMED;
     }
     f->count += 1;
     *result = &f->count;
+
+     /* Print out the latency of the apply */
+    gettimeofday(&stop_iter, NULL);
+    uint64_t apply_end = (stop_iter.tv_sec * 1000) + (stop_iter.tv_usec / 1000);
+    uint64_t apply_start = *((uint64_t*)buf->base);
+    // TracefL(ERROR, "apply_start=%llums, apply_end=%llums diff=%llums", apply_start, apply_end, apply_end - apply_start);
+    gdb_print_record_cnt_latency_sum_ms += apply_end - apply_start;
+
     if (gdb_print_record_cnt != 0 && (f->count % gdb_print_record_cnt == 0 )) {
-      gettimeofday(&stop_iter, NULL);
-      fprintf(stderr, "Took %ld ms for %d records\n", (stop_iter.tv_sec - start_iter.tv_sec) * 1000 + (stop_iter.tv_usec - start_iter.tv_usec)/1000, gdb_print_record_cnt);
+      double avg_latency = gdb_print_record_cnt_latency_sum_ms/(float)gdb_print_record_cnt;
+
+      f->ewma_latency = (alpha*avg_latency) + (1-alpha)*f->ewma_latency;
+      gdb_print_record_cnt_latency_sum_ms = 0;
+      Tracef("Latency for %d records %f EWMA: %f\n", gdb_print_record_cnt, avg_latency, f->ewma_latency);
+
+      unsigned long curr_time =  (stop_iter.tv_sec - start_iter.tv_sec) * 1000 + (stop_iter.tv_usec - start_iter.tv_usec)/1000;
+      fprintf(stderr, "Took %ld ms for %d records\n", curr_time, gdb_print_record_cnt);
       gettimeofday(&start_iter, NULL);
+
+      double throughput = (1.0*gdb_print_record_cnt) / (curr_time / 1000.0);
+      if (isinf(throughput))
+        return 0;
+
+      if (f->ewma == 0.0) {
+        f->ewma = throughput;
+      } else {
+        f->ewma = (alpha*throughput) + (1-alpha)*f->ewma;
+      }
+      Tracef("Throughput (Ops/sec) %f EWMA: %f\n", throughput, f->ewma);
+
     }
     return 0;
 }
@@ -96,6 +136,7 @@ static int FsmInit(struct raft_fsm *fsm)
         return RAFT_NOMEM;
     }
     f->count = 0;
+    f->ewma = 0.0;
     fsm->version = 1;
     fsm->data = f;
     fsm->apply = FsmApply;
@@ -311,10 +352,13 @@ static void serverTimerCb(uv_timer_t *timer)
     if (s->raft.state != RAFT_LEADER) {
         return;
     }
-
+    
+    gettimeofday(&apply_start, NULL);
     buf.len = chunk_size_kb * 1024;
     buf.base = raft_malloc(buf.len);
-    strcpy(buf.base, "hi there");
+    uint64_t curr_time = (apply_start.tv_sec * 1000.0) + (apply_start.tv_usec / 1000.0);
+    // fprintf(stderr, "curr_time: %d\n", curr_time);
+    *((uint64_t*)buf.base) = curr_time; 
     if (buf.base == NULL) {
         Log(s->id, "serverTimerCb(): out of memory");
         return;
@@ -404,7 +448,7 @@ static void mainSigintCb(struct uv_signal_s *handle, int signum)
 
 void parse_options(int argc, char **argv) {
   int opt = 0;
-  while ((opt = getopt(argc, argv, "c:t:r:d:x:y:l:p")) != -1) {
+  while ((opt = getopt(argc, argv, "c:t:r:d:a:x:y:l:p")) != -1) {
     switch (opt) {
       case 'c':
         chunk_size_kb = atoi(optarg);
@@ -417,6 +461,9 @@ void parse_options(int argc, char **argv) {
         break;
       case 'd':
         test_duration_secs = atoi(optarg);
+        break;
+      case 'a':
+        alpha = atof(optarg);
         break;
       case 'x':
         dir = optarg;
@@ -444,6 +491,7 @@ int main(int argc, char *argv[])
 
     fprintf(stderr, "Test parameters: chunk_size_kb=%d inter_op_interval_ms=%d gdb_print_record_cnt=%d test_duration_secs=%d id=%d log_level=%d only_pure_multicast=%d\n", chunk_size_kb, inter_op_interval_ms, gdb_print_record_cnt, test_duration_secs, id, log_level, only_pure_multicast);
 
+    gdb_print_record_cnt_latency_sum_ms = 0;
     struct uv_loop_s loop;
     struct uv_signal_s sigint; /* To catch SIGINT and exit. */
     struct Server server;

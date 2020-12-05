@@ -199,10 +199,11 @@ static void uvFireRecvCb(struct uvServer *s)
         message_type_str(s->message.type), s->message.server_address);
 
     if (s->message.type == RAFT_IO_APPEND_ENTRIES) {
-      TracefL(DEBUG, "In uvFireRecvCb receiving append entries with prev_log_term=%llu, prev_log_index=%llu n_entries=%llu",
+      TracefL(DEBUG, "In uvFireRecvCb receiving append entries with prev_log_term=%llu, prev_log_index=%llu n_entries=%llu commit_idx=%llu",
         s->message.append_entries.prev_log_term,
         s->message.append_entries.prev_log_index,
-        s->message.append_entries.n_entries);
+        s->message.append_entries.n_entries,
+        s->message.append_entries.leader_commit);
     }
     s->uv->recv_cb(s->uv->io, &s->message);
     /* Reset our state as we'll start reading a new message. We don't need to
@@ -328,7 +329,7 @@ static void uvServerReadCb(uv_stream_t *stream,
         return;
     }
     if (nread != UV_EOF) {
-        Tracef(s->uv->tracer, "receive data: %s", uv_strerror((int)nread));
+        TracefL(ERROR, "receive data: %s", uv_strerror((int)nread));
     }
 
 abort:

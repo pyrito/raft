@@ -1,9 +1,7 @@
 #!/bin/bash
 
 run_test_on_3_nodes() {
-  test_name=$1
-  cmd=$2
-  echo $test_name
+  cmd=$1
   ssh centos@172.31.68.186 $cmd > out_1 2>&1 &
   FOO_PID_1=$!
   ssh centos@172.31.69.26 $cmd > out_2 2>&1 &

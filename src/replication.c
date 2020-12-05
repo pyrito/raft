@@ -64,6 +64,10 @@ static void sendAppendEntriesCb(struct raft_io_send *send, const int status)
     TracefL(DEBUG, "In sendAppendEntriesCb for node index %d", i);
     if (r->state == RAFT_LEADER && i < r->configuration.n) {
         if (status != 0) {
+            // Option 2 -
+            //if (r->leader_state.progress[i].state == PROGRESS_PROBE) {
+            //  r->leader_state.progress[i].one_probe_outstanding = false;
+            //}
             TracefL(DEBUG, "failed to send append entries to server %u: %s",
                    req->server_id, raft_strerror(status));
             /* Go back to probe mode. */
@@ -147,11 +151,19 @@ static int sendAppendEntries(struct raft *r,
     req->server_id = server->id;
 
     req->send.data = req;
+    raft_index server_idx = configurationIndexOf(&r->configuration, server->id);
+    // Option 2 -
+    if (r->leader_state.progress[server_idx].state == PROGRESS__PROBE) {
+      r->leader_state.progress[server_idx].one_probe_outstanding = true;
+    }
     rv = r->io->send(r->io, &req->send, &message, sendAppendEntriesCb);
+    // Option 1 -
+    //progressUpdateLastSend(r, i);
     if (rv != 0) {
         goto err_after_req_alloc;
     }
 
+    // Option 1 -
     if (progressState(r, i) == PROGRESS__PIPELINE) {
         /* Optimitiscally update progress. */
         progressOptimisticNextIndex(r, i, req->index + req->n);
@@ -783,16 +795,20 @@ int replicationUpdate(struct raft *r,
       r->should_send_to_next_sibling,
       r->chain_incarnation_id);
 
-    if (result->should_send_to_next_sibling && r->should_send_to_next_sibling) {
+    if (r->should_send_to_next_sibling) {
       // Via chain
+      if (!result->should_send_to_next_sibling) {
+        return 0;
+      }
       if (r->chain_incarnation_id != result->chain_incarnation_id) {
         return 0;
       }
-    } else if (!result->should_send_to_next_sibling && !r->should_send_to_next_sibling) {
-      // Do nothing
-    } else {
-      return 0;
     }
+    //else if (!result->should_send_to_next_sibling && !r->should_send_to_next_sibling) {
+    //  // Do nothing
+    //} else {
+    //  return 0;
+    //}
 
     /* If the RPC failed because of a log mismatch, retry.
      *
@@ -810,8 +826,10 @@ int replicationUpdate(struct raft *r,
         if (r->should_send_to_next_sibling && r->leader_state.progress[i].next_sibling_id != 0) {
           // This node was part of a chain and has fallen out of sync (which is clear because we have a rejection).
           // Switch to pure multicast to heal.
-          switchToPureMulticast(r);
-          return 0;
+          if (r->next_sibling_id != server->id) {
+            switchToPureMulticast(r);
+            return 0;
+          }
         }
 
         if (retry) {

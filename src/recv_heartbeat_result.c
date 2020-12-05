@@ -31,6 +31,11 @@ int recvHeartbeatResult(struct raft *r,
   struct raft_io_send *req;
   int rv;
 
+  if (r->state != RAFT_LEADER) {
+    tracef("local server is not leader -> ignore");
+    return 0;
+  }
+
   // Confirm if the term matches. If not, ignore message.
   if (r->current_term != args->term) {
     TracefL(ERROR, "Got heartbeat result from another term %d, current term is %d", args->term, r->current_term);

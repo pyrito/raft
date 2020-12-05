@@ -548,6 +548,7 @@ struct raft_progress
     raft_id next_sibling_id;    /* Next sibling id. 0 if multicast node*/
     raft_time node_alive_start;    /* Start of timer from which we check for node_alive_timeout to find faults in chain*/
     bool dead;
+    bool one_probe_outstanding;
 };
 
 struct raft; /* Forward declaration. */

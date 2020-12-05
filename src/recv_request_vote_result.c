@@ -115,7 +115,7 @@ int recvRequestVoteResult(struct raft *r,
                     return rv;
                 }
                 /* Send initial heartbeat. */
-                replicationHeartbeat(r);
+                // replicationHeartbeat(r);
             }
         } else {
             tracef("votes quorum not reached");
