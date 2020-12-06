@@ -42,7 +42,7 @@ void chainReplicateMessage(struct raft *r, struct raft_message *message) {
     if (r->next_sibling_id != message->append_entries.leader_id) {
       if (r->next_sibling_id == 0) {
         TracefL(ERROR, "The next_sibling_id is 0 but we got a message to be relayed.");
-        assert(false); // Can't reach here
+        return;
       }
       TracefL(INFO, "Chain replicating message to %d %s", server->id, server->address);
       message_next.server_id = server->id;

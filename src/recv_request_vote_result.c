@@ -109,7 +109,7 @@ int recvRequestVoteResult(struct raft *r,
                     return rv;
                 }
             } else {
-                TracefL(INFO, "votes quorum reached -> convert to leader");
+                TracefL(ERROR, "votes quorum reached -> convert to leader");
                 rv = convertToLeader(r);
                 if (rv != 0) {
                     return rv;

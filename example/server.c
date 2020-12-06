@@ -40,6 +40,7 @@ unsigned id;
 int log_level = 1;
 bool only_pure_multicast = false;
 double alpha = 0.3;
+int n_servers = 0;
 
 struct Fsm
 {
@@ -48,16 +49,22 @@ struct Fsm
     double ewma_latency;
 };
 
+struct latency_measurement_struct {
+  uint64_t raft_apply_start_time;
+  raft_id initiator_id;
+};
+
 struct timeval stop, start, stop_iter, start_iter, apply_start;
 
 uint64_t gdb_print_record_cnt_latency_sum_ms;
+uint64_t latency_sum_ms;
+uint64_t latency_ops_counter;
 
 static int FsmApply(struct raft_fsm *fsm,
                     const struct raft_buffer *buf,
                     void **result)
 {
     struct Fsm *f = fsm->data;
-//    if ((buf->len != chunk_size_kb * 1024) || (strcmp(buf->base, "hi there") != 0)) {
     if ((buf->len != chunk_size_kb *1024)) {    
         fprintf(stderr, "Failing... %s %d\n",
             buf->base, strcmp(buf->base, "hi there"));
@@ -71,14 +78,21 @@ static int FsmApply(struct raft_fsm *fsm,
     uint64_t apply_end = (stop_iter.tv_sec * 1000) + (stop_iter.tv_usec / 1000);
     uint64_t apply_start = *((uint64_t*)buf->base);
     // TracefL(ERROR, "apply_start=%llums, apply_end=%llums diff=%llums", apply_start, apply_end, apply_end - apply_start);
-    gdb_print_record_cnt_latency_sum_ms += apply_end - apply_start;
+    if (id == ((struct latency_measurement_struct *) buf->base)->initiator_id) {
+      gdb_print_record_cnt_latency_sum_ms += apply_end - apply_start;
+      latency_sum_ms += apply_end - apply_start;
+      latency_ops_counter++;
+    }
 
-    if (gdb_print_record_cnt != 0 && (f->count % gdb_print_record_cnt == 0 )) {
+    if (latency_ops_counter != 0 && latency_ops_counter%gdb_print_record_cnt == 0) {
       double avg_latency = gdb_print_record_cnt_latency_sum_ms/(float)gdb_print_record_cnt;
 
       f->ewma_latency = (alpha*avg_latency) + (1-alpha)*f->ewma_latency;
       gdb_print_record_cnt_latency_sum_ms = 0;
       Tracef("Latency for %d records %f EWMA: %f\n", gdb_print_record_cnt, avg_latency, f->ewma_latency);
+    }
+
+    if (gdb_print_record_cnt != 0 && (f->count % gdb_print_record_cnt == 0 )) {
 
       unsigned long curr_time =  (stop_iter.tv_sec - start_iter.tv_sec) * 1000 + (stop_iter.tv_usec - start_iter.tv_usec)/1000;
       fprintf(stderr, "Took %ld ms for %d records\n", curr_time, gdb_print_record_cnt);
@@ -94,7 +108,6 @@ static int FsmApply(struct raft_fsm *fsm,
         f->ewma = (alpha*throughput) + (1-alpha)*f->ewma;
       }
       Tracef("Throughput (Ops/sec) %f EWMA: %f\n", throughput, f->ewma);
-
     }
     return 0;
 }
@@ -278,10 +291,24 @@ static int ServerInit(struct Server *s,
 
     /* Bootstrap the initial configuration if needed. */
     raft_configuration_init(&configuration);
-    for (i = 0; i < N_SERVERS; i++) {
+    for (i = 0; i < n_servers; i++) {
         char address[64];
         unsigned server_id = i + 1;
-        sprintf(address, "127.0.0.1:900%d", server_id);
+        if (i == 0)
+          sprintf(address, "172.31.68.186:9000");
+        if (i == 1)
+          sprintf(address, "172.31.69.26:9000");
+        if (i == 2)
+          sprintf(address, "172.31.76.155:9000");
+        if (i == 3)
+          sprintf(address, "172.31.70.111:9000");
+        if (i == 4)
+          sprintf(address, "172.31.68.22:9000");
+        if (i == 5)
+          sprintf(address, "172.31.75.57:9000");
+        if (i == 6)
+          sprintf(address, "172.31.77.61:9000");
+
         rv = raft_configuration_add(&configuration, server_id, address,
                                     RAFT_VOTER);
         if (rv != 0) {
@@ -344,9 +371,11 @@ static void serverTimerCb(uv_timer_t *timer)
     gettimeofday(&temp, NULL);
     if (test_duration_secs < (temp.tv_sec - start.tv_sec)) {
       struct Fsm *f = s->fsm.data;
-      fprintf(stderr, "Ops=%d Ops/sec = %f\n",
-        f->count, ((float) (f->count))/(temp.tv_sec - start.tv_sec));
-      sleep(2);
+      fprintf(stderr, "Ops=%d Ops/sec = %.2f Latency=%.2fms for %d ops\n",
+        f->count, ((float) (f->count))/(temp.tv_sec - start.tv_sec),
+        latency_sum_ms/((float)latency_ops_counter),
+        latency_ops_counter);
+       sleep(2);
        exit(0);    
     }
     if (s->raft.state != RAFT_LEADER) {
@@ -358,7 +387,10 @@ static void serverTimerCb(uv_timer_t *timer)
     buf.base = raft_malloc(buf.len);
     uint64_t curr_time = (apply_start.tv_sec * 1000.0) + (apply_start.tv_usec / 1000.0);
     // fprintf(stderr, "curr_time: %d\n", curr_time);
-    *((uint64_t*)buf.base) = curr_time; 
+    struct latency_measurement_struct *lat_struct = (struct latency_measurement_struct*) buf.base;
+    lat_struct->raft_apply_start_time = curr_time;
+    lat_struct->initiator_id = s->id;
+    // *((uint64_t*)buf.base) = curr_time; 
     if (buf.base == NULL) {
         Log(s->id, "serverTimerCb(): out of memory");
         return;
@@ -413,7 +445,7 @@ static void ServerClose(struct Server *s, ServerCloseCb cb)
     Log(s->id, "stopping");
 
     struct Fsm *f = s->fsm.data;
-    fprintf(stderr, "Ops=%d Ops/sec = %f",
+    fprintf(stderr, "ServerClose Ops=%d Ops/sec = %f",
       f->count, ((float) (f->count))/(stop.tv_sec - start.tv_sec));
     /* Close the timer asynchronously if it was successfully
      * initialized. Otherwise invoke the callback immediately. */
@@ -448,7 +480,7 @@ static void mainSigintCb(struct uv_signal_s *handle, int signum)
 
 void parse_options(int argc, char **argv) {
   int opt = 0;
-  while ((opt = getopt(argc, argv, "c:t:r:d:a:x:y:l:p")) != -1) {
+  while ((opt = getopt(argc, argv, "c:t:r:d:a:x:y:l:pn:")) != -1) {
     switch (opt) {
       case 'c':
         chunk_size_kb = atoi(optarg);
@@ -477,8 +509,11 @@ void parse_options(int argc, char **argv) {
       case 'p':
         only_pure_multicast = true;
         break;
+      case 'n':
+        n_servers = atoi(optarg);
+        break;
       default: /* '?' */
-        fprintf(stderr, "Usage: %s [-c <chunk_size_kb> -t <inter_op_interval_ms> -r <gdb_print_record_cnt> -d <test_duration_secs> -x <dir> -y <id> -l <log_level 1,2,3> -p <only_pure_multicast>]\n",
+        fprintf(stderr, "Usage: %s [-c <chunk_size_kb> -t <inter_op_interval_ms> -r <gdb_print_record_cnt> -d <test_duration_secs> -x <dir> -y <id> -l <log_level 1,2,3> -p <only_pure_multicast> -n <n_servers>]\n",
              argv[0]);
         exit(EXIT_FAILURE);
       }
@@ -489,9 +524,10 @@ int main(int argc, char *argv[])
 {
     parse_options(argc, argv);
 
-    fprintf(stderr, "Test parameters: chunk_size_kb=%d inter_op_interval_ms=%d gdb_print_record_cnt=%d test_duration_secs=%d id=%d log_level=%d only_pure_multicast=%d\n", chunk_size_kb, inter_op_interval_ms, gdb_print_record_cnt, test_duration_secs, id, log_level, only_pure_multicast);
+    fprintf(stderr, "Test parameters: chunk_size_kb=%d inter_op_interval_ms=%d gdb_print_record_cnt=%d test_duration_secs=%d id=%d log_level=%d only_pure_multicast=%d n_servers=%d\n", chunk_size_kb, inter_op_interval_ms, gdb_print_record_cnt, test_duration_secs, id, log_level, only_pure_multicast, n_servers);
 
     gdb_print_record_cnt_latency_sum_ms = 0;
+    latency_sum_ms = 0;
     struct uv_loop_s loop;
     struct uv_signal_s sigint; /* To catch SIGINT and exit. */
     struct Server server;

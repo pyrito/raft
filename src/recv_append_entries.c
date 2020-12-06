@@ -52,6 +52,7 @@ int recvAppendEntries(struct raft *r,
         return rv;
     }
 
+    struct raft_server *leader = configurationGet(&r->configuration, args->leader_id);
     /* From Figure 3.1:
      *
      *   AppendEntries RPC: Receiver implementation: Reply false if term <
@@ -106,7 +107,6 @@ int recvAppendEntries(struct raft *r,
 
     /* Update current leader because the term in this AppendEntries RPC is up to
      * date. */
-    struct raft_server *leader = configurationGet(&r->configuration, args->leader_id);
     rv = recvUpdateLeader(r, args->leader_id, leader->address);
     if (rv != 0) {
         TracefL(ERROR, "failed in recvUpdateLeader");

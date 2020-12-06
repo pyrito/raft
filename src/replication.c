@@ -795,7 +795,7 @@ int replicationUpdate(struct raft *r,
       r->should_send_to_next_sibling,
       r->chain_incarnation_id);
 
-    if (r->should_send_to_next_sibling) {
+    if (r->should_send_to_next_sibling && r->leader_state.progress[i].next_sibling_id != 0) {
       // Via chain
       if (!result->should_send_to_next_sibling) {
         return 0;
