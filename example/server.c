@@ -267,7 +267,7 @@ static int ServerInit(struct Server *s,
     s->id = id;
 
     /* Render the address. */
-    sprintf(s->address, "127.0.0.1:900%d", id);
+    sprintf(s->address, "172.31.68.186:9000");
 
     /* Initialize and start the engine, using the libuv-based I/O backend. */
     rv = raft_init(&s->raft, &s->io, &s->fsm, id, s->address);
