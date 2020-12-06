@@ -40,6 +40,7 @@ unsigned id;
 int log_level = 1;
 bool only_pure_multicast = false;
 double alpha = 0.3;
+int n_servers = 0;
 
 struct Fsm
 {
@@ -278,10 +279,24 @@ static int ServerInit(struct Server *s,
 
     /* Bootstrap the initial configuration if needed. */
     raft_configuration_init(&configuration);
-    for (i = 0; i < N_SERVERS; i++) {
+    for (i = 0; i < n_servers; i++) {
         char address[64];
         unsigned server_id = i + 1;
-        sprintf(address, "127.0.0.1:900%d", server_id);
+        if (i == 0)
+          sprintf(address, "172.31.68.186:9000");
+        if (i == 1)
+          sprintf(address, "172.31.69.26:9000");
+        if (i == 2)
+          sprintf(address, "172.31.76.155:9000");
+        if (i == 3)
+          sprintf(address, "172.31.70.111:9000");
+        if (i == 4)
+          sprintf(address, "172.31.68.22:9000");
+        if (i == 5)
+          sprintf(address, "172.31.75.57:9000");
+        if (i == 6)
+          sprintf(address, "172.31.77.61:9000");
+
         rv = raft_configuration_add(&configuration, server_id, address,
                                     RAFT_VOTER);
         if (rv != 0) {
@@ -448,7 +463,7 @@ static void mainSigintCb(struct uv_signal_s *handle, int signum)
 
 void parse_options(int argc, char **argv) {
   int opt = 0;
-  while ((opt = getopt(argc, argv, "c:t:r:d:a:x:y:l:p")) != -1) {
+  while ((opt = getopt(argc, argv, "c:t:r:d:a:x:y:l:pn:")) != -1) {
     switch (opt) {
       case 'c':
         chunk_size_kb = atoi(optarg);
@@ -477,8 +492,11 @@ void parse_options(int argc, char **argv) {
       case 'p':
         only_pure_multicast = true;
         break;
+      case 'n':
+        n_servers = atoi(optarg);
+        break;
       default: /* '?' */
-        fprintf(stderr, "Usage: %s [-c <chunk_size_kb> -t <inter_op_interval_ms> -r <gdb_print_record_cnt> -d <test_duration_secs> -x <dir> -y <id> -l <log_level 1,2,3> -p <only_pure_multicast>]\n",
+        fprintf(stderr, "Usage: %s [-c <chunk_size_kb> -t <inter_op_interval_ms> -r <gdb_print_record_cnt> -d <test_duration_secs> -x <dir> -y <id> -l <log_level 1,2,3> -p <only_pure_multicast> -n <n_servers>]\n",
              argv[0]);
         exit(EXIT_FAILURE);
       }
@@ -489,7 +507,7 @@ int main(int argc, char *argv[])
 {
     parse_options(argc, argv);
 
-    fprintf(stderr, "Test parameters: chunk_size_kb=%d inter_op_interval_ms=%d gdb_print_record_cnt=%d test_duration_secs=%d id=%d log_level=%d only_pure_multicast=%d\n", chunk_size_kb, inter_op_interval_ms, gdb_print_record_cnt, test_duration_secs, id, log_level, only_pure_multicast);
+    fprintf(stderr, "Test parameters: chunk_size_kb=%d inter_op_interval_ms=%d gdb_print_record_cnt=%d test_duration_secs=%d id=%d log_level=%d only_pure_multicast=%d n_servers=%d\n", chunk_size_kb, inter_op_interval_ms, gdb_print_record_cnt, test_duration_secs, id, log_level, only_pure_multicast, n_servers);
 
     gdb_print_record_cnt_latency_sum_ms = 0;
     struct uv_loop_s loop;
