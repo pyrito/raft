@@ -56,6 +56,7 @@ struct latency_measurement_struct {
 
 struct timeval stop, start, stop_iter, start_iter, apply_start;
 
+uint64_t record_cnt;
 uint64_t gdb_print_record_cnt_latency_sum_ms;
 uint64_t latency_sum_ms;
 uint64_t latency_ops_counter;
@@ -72,43 +73,45 @@ static int FsmApply(struct raft_fsm *fsm,
     }
     f->count += 1;
     *result = &f->count;
-
+    record_cnt++;
+    
      /* Print out the latency of the apply */
     gettimeofday(&stop_iter, NULL);
+    unsigned long time_diff =  (stop_iter.tv_sec - start_iter.tv_sec) * 1000 + (stop_iter.tv_usec - start_iter.tv_usec)/1000;
     uint64_t apply_end = (stop_iter.tv_sec * 1000) + (stop_iter.tv_usec / 1000);
     uint64_t apply_start = *((uint64_t*)buf->base);
-    // TracefL(ERROR, "apply_start=%llums, apply_end=%llums diff=%llums", apply_start, apply_end, apply_end - apply_start);
     if (id == ((struct latency_measurement_struct *) buf->base)->initiator_id) {
       gdb_print_record_cnt_latency_sum_ms += apply_end - apply_start;
       latency_sum_ms += apply_end - apply_start;
-      latency_ops_counter++;
     }
 
-    if (latency_ops_counter != 0 && latency_ops_counter%gdb_print_record_cnt == 0) {
-      double avg_latency = gdb_print_record_cnt_latency_sum_ms/(float)gdb_print_record_cnt;
-
-      f->ewma_latency = (alpha*avg_latency) + (1-alpha)*f->ewma_latency;
-      gdb_print_record_cnt_latency_sum_ms = 0;
-      Tracef("Latency for %d records %f EWMA: %f\n", gdb_print_record_cnt, avg_latency, f->ewma_latency);
-    }
-
-    if (gdb_print_record_cnt != 0 && (f->count % gdb_print_record_cnt == 0 )) {
-
-      unsigned long curr_time =  (stop_iter.tv_sec - start_iter.tv_sec) * 1000 + (stop_iter.tv_usec - start_iter.tv_usec)/1000;
-      fprintf(stderr, "Took %ld ms for %d records\n", curr_time, gdb_print_record_cnt);
+    if (time_diff > 1000) {
+      double throughput = (1.0*record_cnt) / (time_diff / 1000.0);
+      //if (f->ewma == 0.0) {
+      //  f->ewma = throughput;
+      //} else {
+      //  f->ewma = (alpha*throughput) + (1-alpha)*f->ewma;
+      //}
+      Tracef("Throughput (Ops/sec) %.2f Latency: %d/%d = %.2f", throughput, latency_sum_ms, record_cnt, latency_sum_ms/((float)record_cnt));
+      latency_sum_ms = 0;
+      record_cnt = 0; 
       gettimeofday(&start_iter, NULL);
-
-      double throughput = (1.0*gdb_print_record_cnt) / (curr_time / 1000.0);
-      if (isinf(throughput))
-        return 0;
-
-      if (f->ewma == 0.0) {
-        f->ewma = throughput;
-      } else {
-        f->ewma = (alpha*throughput) + (1-alpha)*f->ewma;
-      }
-      Tracef("Throughput (Ops/sec) %f EWMA: %f\n", throughput, f->ewma);
     }
+    // TracefL(ERROR, "apply_start=%llums, apply_end=%llums diff=%llums", apply_start, apply_end, apply_end - apply_start);
+
+    //if (latency_ops_counter != 0 && latency_ops_counter%gdb_print_record_cnt == 0) {
+    //  double avg_latency = gdb_print_record_cnt_latency_sum_ms/(float)gdb_print_record_cnt;
+
+    //  f->ewma_latency = (alpha*avg_latency) + (1-alpha)*f->ewma_latency;
+    //  gdb_print_record_cnt_latency_sum_ms = 0;
+    //  Tracef("Latency for %d records %f EWMA: %f\n", gdb_print_record_cnt, avg_latency, f->ewma_latency);
+    //}
+
+    //if (gdb_print_record_cnt != 0 && (f->count % gdb_print_record_cnt == 0 )) {
+
+    //  fprintf(stderr, "Took %ld ms for %d records\n", curr_time, gdb_print_record_cnt);
+
+    //}
     return 0;
 }
 
@@ -528,6 +531,7 @@ int main(int argc, char *argv[])
 
     gdb_print_record_cnt_latency_sum_ms = 0;
     latency_sum_ms = 0;
+    record_cnt = 0;
     struct uv_loop_s loop;
     struct uv_signal_s sigint; /* To catch SIGINT and exit. */
     struct Server server;
