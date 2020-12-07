@@ -696,6 +696,7 @@ int logAcquire(struct raft_log *l,
     }
 
     assert(*n > 0);
+    *n = max(*n, 16);
 
     *entries = raft_calloc(*n, sizeof **entries);
     if (*entries == NULL) {

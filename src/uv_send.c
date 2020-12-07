@@ -483,11 +483,11 @@ int UvSend(struct raft_io *io,
     rv = uvGetClient(uv, message->server_id, message->server_address, &client);
     struct uvClient *c = client;
     if (message->type != RAFT_IO_HEARTBEAT && message->type != RAFT_IO_HEARTBEAT_RESULT)
-      TracefL(INFO, "Sending message %s to %s",
-        message_type_str(message->type), message->server_address);
+      TracefL(INFO, "Sending message %s to %s rv=%d",
+        message_type_str(message->type), message->server_address, rv);
     else
-      TracefL(DEBUG, "Sending message %s to %s",
-        message_type_str(message->type), message->server_address);
+      TracefL(DEBUG, "Sending message %s to %s rv=%d",
+        message_type_str(message->type), message->server_address, rv);
       
     if (rv != 0) {
         goto err_after_send_alloc;

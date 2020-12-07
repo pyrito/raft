@@ -257,7 +257,7 @@ static void uvServerReadCb(uv_stream_t *stream,
 
             /* The length of the header must be greater than zero. */
             if (s->header.len == 0) {
-                Tracef(s->uv->tracer, "message has zero length");
+                Tracef("message has zero length");
                 goto abort;
             }
         } else if (s->payload.len == 0) {
@@ -273,7 +273,7 @@ static void uvServerReadCb(uv_stream_t *stream,
             rv = uvDecodeMessage((unsigned long)type, &s->header, &s->message,
                                  &s->payload.len);
             if (rv != 0) {
-                Tracef(s->uv->tracer, "decode message: %s",
+                Tracef("decode message: %s",
                        errCodeToString(rv));
                 goto abort;
             }
@@ -342,7 +342,7 @@ static int uvServerStart(struct uvServer *s)
     int rv;
     rv = uv_read_start(s->stream, uvServerAllocCb, uvServerReadCb);
     if (rv != 0) {
-        Tracef(s->uv->tracer, "start reading: %s", uv_strerror(rv));
+        Tracef("start reading: %s", uv_strerror(rv));
         return RAFT_IOERR;
     }
     return 0;

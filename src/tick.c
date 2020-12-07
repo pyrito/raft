@@ -194,8 +194,8 @@ void switchToPureMulticast(struct raft *r) {
 }
 
 void handleDeadNode(struct raft *r, int i) {
+    TracefL(INFO, "Node %d is down.", r->configuration.servers[i].id);
     if (r->leader_state.progress[i].next_sibling_id != 0) {
-      TracefL(INFO, "Node %d is down.", r->configuration.servers[i].id);
       switchToPureMulticast(r);
     }
 
@@ -241,11 +241,11 @@ bool moreHealthyChainExists(struct raft *r) {
      return false;
    }
 
-   TracefL(DEBUG, "Chain modification: moreHealthyChainExists cnt_alive_nodes_including_leader=%d current_chain_len=%d. Check for closeness...", cnt_alive_nodes_including_leader, current_chain_len);
+   TracefL(DEBUG, "Chain _modification: moreHealthyChainExists cnt_alive_nodes_including_leader=%d current_chain_len=%d. Check for closeness...", cnt_alive_nodes_including_leader, current_chain_len);
    bool all_nodes_are_close = false;
    for (int i = 0; i < r->configuration.n; i++) {
      struct raft_progress *progress = &(r->leader_state.progress[i]);
-     TracefL(DEBUG, "Chain modification: i is %d match_index=%d", i, progress->match_index);
+     TracefL(DEBUG, "Chain _modification: i is %d match_index=%d", i, progress->match_index);
      if (r->configuration.servers[i].id == r->id || progress->dead || progress->state != PROGRESS__PIPELINE) {
        continue;
      }
@@ -258,7 +258,7 @@ bool moreHealthyChainExists(struct raft *r) {
          continue;
        }
        if (abs(progress_2->match_index, progress->match_index) > 10) {
-         TracefL(DEBUG, "Chain modification: Absolute difference in index values is |%d-%d| %d. Won't reform", progress_2->match_index, progress->match_index, abs(progress_2->match_index, progress->match_index));
+         TracefL(DEBUG, "Chain _modification: Absolute difference in index values is |%d-%d| %d. Won't reform", progress_2->match_index, progress->match_index, abs(progress_2->match_index, progress->match_index));
          return false;
        }
      }
