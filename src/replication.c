@@ -84,6 +84,7 @@ static void sendAppendEntriesCb(struct raft_io_send *send, const int status)
              * idle periods to prevent election timeouts
              */
             progressUpdateLastSend(r, i);
+            progressToPipeline(r, i);
         }
     }
 
